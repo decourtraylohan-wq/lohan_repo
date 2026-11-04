@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DEADBLOCK</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+  <div id="hitmarker"></div>
+  <div id="vignette"></div>
+  <div id="flash"></div>
+  <div id="dmgdir"><div></div></div>
+  <div id="scope"><div class="ring"></div></div>
+  <div id="wavebox"><div id="wave">0</div><div id="left"></div></div>
+  <canvas id="minimap" width="150" height="150"></canvas>
+  <div id="bossbar" class="hidden"><div id="bossname"></div><div class="bar"><div id="bosshp"></div></div></div>
+  <div id="msg"><div id="msgTitle"></div><div id="msgSub"></div></div>
+  <div id="prompt"></div>
+  <div id="powers"></div>
+  <div id="bottomleft">
+    <div id="pops"></div>
+    <div id="points">500</div>
+    <div id="perks"></div>
+    <div class="hpwrap"><div id="hpbar"></div><span id="hptext">100</span></div>
+    <div id="stamina"><div></div></div>
+  </div>
+  <div id="bottomright">
+    <div id="slots"></div>
+    <div id="wname"></div>
+    <div id="ammo"><span id="mag">0</span><span id="reserve">/ 0</span></div>
+    <div id="grenades"></div>
+    <div id="reloadhint"></div>
+  </div>
+  <div id="scoreboard" class="hidden"></div>
+</div>
+
+<!-- MENUS -->
+<div id="menus">
+  <section id="scr-main" class="screen">
+    <div class="main-left">
+      <h1 class="logo">DEAD<span>BLOCK</span></h1>
+      <p class="tag">Survie zombie par vagues — monde en blocs</p>
+      <nav class="mainnav">
+        <button data-go="play" class="big">Jouer</button>
+        <button data-go="stats">Classement &amp; stats</button>
+        <button data-go="arsenal">Arsenal &amp; bestiaire</button>
+        <button data-go="options">Options</button>
+        <button data-go="controls">Contrôles</button>
+      </nav>
+    </div>
+    <div class="main-right" id="profileCard"></div>
+  </section>
+
+  <section id="scr-play" class="screen hidden">
+    <header><button class="back" data-go="main">← Retour</button><h2>Nouvelle partie</h2></header>
+    <div class="modes">
+      <button class="mode active" data-mode="classic"><b>Classique</b><small>Partie libre, sans impact sur le rang</small></button>
+      <button class="mode" data-mode="ranked"><b>Classé</b><small>Gagnez ou perdez des RP selon vos performances</small></button>
+    </div>
+    <div id="rankedInfo" class="panel hidden"></div>
+    <div id="mapList" class="maps"></div>
+    <div class="launch"><button id="btnLaunch" class="big">Lancer la partie</button></div>
+  </section>
+
+  <section id="scr-stats" class="screen hidden">
+    <header><button class="back" data-go="main">← Retour</button><h2>Classement &amp; statistiques</h2></header>
+    <div id="statsBody"></div>
+  </section>
+
+  <section id="scr-arsenal" class="screen hidden">
+    <header><button class="back" data-go="main">← Retour</button><h2>Arsenal &amp; bestiaire</h2></header>
+    <div id="arsenalBody"></div>
+  </section>
+
+  <section id="scr-options" class="screen hidden">
+    <header><button class="back" data-go="back">← Retour</button><h2>Options</h2></header>
+    <div class="panel options">
+      <label>Pseudo <input id="optName" maxlength="16"></label>
+      <label>Sensibilité souris <input id="optSens" type="range" min="0.2" max="3" step="0.05"><span id="optSensV"></span></label>
+      <label>Volume <input id="optVol" type="range" min="0" max="1" step="0.05"><span id="optVolV"></span></label>
+      <label>Champ de vision <input id="optFov" type="range" min="60" max="100" step="1"><span id="optFovV"></span></label>
+      <label>Qualité graphique <select id="optQual"><option value="haute">Haute</option><option value="moyenne">Moyenne</option><option value="basse">Basse</option></select></label>
+    </div>
+  </section>
+
+  <section id="scr-controls" class="screen hidden">
+    <header><button class="back" data-go="main">← Retour</button><h2>Contrôles</h2></header>
+    <div class="panel controls">
+      <div><kbd>Z Q S D</kbd> / <kbd>W A S D</kbd> Se déplacer</div>
+      <div><kbd>Maj</kbd> Sprinter</div>
+      <div><kbd>Espace</kbd> Sauter</div>
+      <div><kbd>Clic gauche</kbd> Tirer</div>
+      <div><kbd>Clic droit</kbd> Viser</div>
+      <div><kbd>R</kbd> Recharger</div>
+      <div><kbd>1 2 3</kbd> / <kbd>Molette</kbd> Changer d'arme</div>
+      <div><kbd>E</kbd> Acheter / interagir</div>
+      <div><kbd>V</kbd> Couteau</div>
+      <div><kbd>G</kbd> Grenade</div>
+      <div><kbd>N</kbd> Lancer la vague suivante</div>
+      <div><kbd>Tab</kbd> Statistiques de la partie</div>
+      <div><kbd>Échap</kbd> Pause</div>
+      <p class="hint">Gagnez des points en touchant et en tuant des zombies. Dépensez-les aux stations : armes murales (socle doré), caisse mystère (faisceau bleu), atouts (machines colorées, qui s'activent au fil des vagues) et la Forge ★ (vague 8) pour améliorer votre arme. Un boss apparaît toutes les 5 vagues.</p>
+    </div>
+  </section>
+
+  <section id="scr-pause" class="screen hidden overlay">
+    <div class="center-box">
+      <h2>Pause</h2>
+      <button id="btnResume" class="big">Reprendre</button>
+      <button data-go="options">Options</button>
+      <button id="btnAbandon" class="danger">Abandonner la partie</button>
+    </div>
+  </section>
+
+  <section id="scr-over" class="screen hidden overlay">
+    <div class="center-box wide" id="overBody"></div>
+  </section>
+</div>
+
+<script src="js/vendor/three.min.js"></script>
+<script src="js/util.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/textures.js"></script>
+<script src="js/world.js"></script>
+<script src="js/maps.js"></script>
+<script src="js/weapons.js"></script>
+<script src="js/ranked.js"></script>
+<script src="js/enemies.js"></script>
+<script src="js/player.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
