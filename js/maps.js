@@ -69,7 +69,7 @@ G.Maps = (function () {
         if (!w.get(x + dx, y + dy, z + dz)) w.set(x + dx, y + dy, z + dz, B.PINE);
       }
     }
-    for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { w.set(x + dx, y + th + 3, z + dz, B.PINE); w.set(x + dx, y + th + 4, z + dz, B.SNOW); }
+    for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { w.set(x + dx, y + th + 3, z + dz, B.PINE); w.set(x + dx, y + th + 4, z + dz, B.SNOW_BLOCK); }
     for (const [dx, dz] of [[-1, 0], [2, 1], [0, 2], [1, -1]]) if (rnd() < 0.6) w.set(x + dx, y + 1, z + dz, B.DARK_LOG);
   }
   function palm(w, x, y, z) {
@@ -232,14 +232,20 @@ G.Maps = (function () {
   // escalier de 1 de large, monte de "n" marches dans la direction (dx,dz) à partir du sol gy
   const STAIR_OF = { [B.PLANKS]: B.STAIR_WOOD, [B.DARKBRICK]: B.STAIR_DARK, [B.OBSIDIAN]: B.STAIR_DARK, [B.SANDSTONE]: B.STAIR_SAND, [B.CONCRETE]: B.STAIR_CONCRETE, [B.CONCRETE_DARK]: B.STAIR_CONCRETE, [B.SEWER]: B.STAIR_STONE, [B.GRATE]: B.STAIR_METAL, [B.METAL]: B.STAIR_METAL };
   const dirOf = (dx, dz) => (dx > 0 ? 0 : dx < 0 ? 1 : dz > 0 ? 2 : 3);
-  function stairs(w, x, z, gy, n, dx, dz, mat, width = 2) {
+  function stairs(w, x, z, gy, n, dx, dz, mat, width = 2, exitDir) {
     const px = dz !== 0 ? 1 : 0, pz = dx !== 0 ? 1 : 0;
     const sb = STAIR_OF[mat] || B.STAIR_STONE;
     for (let i = 0; i < n; i++) for (let k = 0; k < width; k++) {
       const cx = x + dx * i + px * k, cz = z + dz * i + pz * k;
       for (let y = gy + 1; y <= gy + i; y++) w.set(cx, y, cz, mat);
-      w.setStair(cx, gy + 1 + i, cz, sb, dirOf(dx, dz));
+      // la dernière marche tourne vers la sortie quand l'escalier débouche sur le côté
+      w.setStair(cx, gy + 1 + i, cz, sb, i === n - 1 && exitDir !== undefined ? exitDir : dirOf(dx, dz));
       for (let y = gy + 2 + i; y <= gy + 4 + i; y++) w.set(cx, y, cz, B.AIR);
+    }
+    // palier : une rangée pleine derrière la dernière marche s'il n'y a rien
+    for (let k = 0; k < width; k++) {
+      const lx = x + dx * n + px * k, lz = z + dz * n + pz * k;
+      if (exitDir === undefined && !w.isSolid(lx, gy + n, lz)) { w.set(lx, gy + n, lz, mat); for (let y = gy + n + 1; y <= gy + n + 2; y++) w.set(lx, y, lz, B.AIR); }
     }
   }
   // volée d'escalier intérieure : marches pleines + trémie dans le plafond au-dessus de TOUTES les marches
@@ -388,7 +394,8 @@ G.Maps = (function () {
       const n = G.makeNoise(101);
       terrain(w, (x, z) => {
         let h = 6 + (n(x * 0.05, z * 0.05) - 0.5) * 6;
-        const hill = Math.max(0, 1 - Math.hypot(x - 15, z - 15) / 22); h += hill * hill * 15 + hill * 2;
+        const dh = Math.hypot(x - 15, z - 15), k = dh < 8 ? 1 : Math.max(0, 1 - (dh - 8) / 13);
+        h += 9 * k * k * (3 - 2 * k) + (dh < 8 ? 0 : (n(x * 0.3, z * 0.3) - 0.5) * 1.5);
         return h;
       }, (x, y, z, h) => (y === h ? B.GRASS : y > h - 3 ? B.DIRT : B.STONE));
       flatten(w, 40, 40, 16, 6, B.GRASS, B.DIRT);
@@ -529,21 +536,7 @@ G.Maps = (function () {
       for (let dx = -1; dx <= 0; dx++) { w.set(tx + dx, 2, tz - 5, B.AIR); w.set(tx + dx, 3, tz - 5, B.AIR); w.set(tx + dx, 1, tz - 5, B.SANDSTONE); }
       // cactus et buissons morts
       portalPad(w, 16, 1, 61);
-      // crête rocheuse à l'est du plateau et grotte qui la traverse jusqu'en bas
-      for (let z = 0; z < 42; z++) for (let x = 69; x < 80; x++) {
-        const top = Math.round(z <= 24 ? 22 + Math.sin(x * 0.7) : 22 - (z - 24) * 1.25 + Math.sin(x * 0.7));
-        if (top <= w.top(x, z)) continue;
-        for (let y = 1; y <= top; y++) w.set(x, y, z, y > top - 2 ? B.REDSAND : y % 3 === 0 ? B.CLAY : B.REDSAND);
-      }
-      const cave = [];
-      for (let x = 66; x <= 76; x++) cave.push([x, 12, 17]);
-      for (let z = 13; z <= 42; z++) cave.push([76, z, Math.max(5, 17 - Math.floor((z - 12) * 0.42))]);
-      for (const [cx, cz, fy] of cave) for (let o = -1; o <= 1; o++) {
-        const x = cz === 12 && cx < 76 ? cx : cx + o, z = cz === 12 && cx < 76 ? cz + o : cz;
-        w.set(x, fy, z, B.SANDSTONE);
-        for (let y = fy + 1; y <= fy + 3; y++) w.set(x, y, z, B.AIR);
-        if (o === 0 && (cx + cz) % 6 === 0 && w.isSolid(x, fy + 4, z)) w.set(x, fy + 4, z, B.GLOW);
-      }
+      w.desertPath = true;
       // murets (abris) à côté des stations autour de la ziggourat
       for (const [x, z] of [[40, 28], [30, 34], [50, 34], [30, 46], [50, 46], [34, 29], [46, 29], [28, 40], [52, 40], [34, 51], [31, 37]]) {
         const ox = Math.sign(x - 40), oz = Math.sign(z - 40);
@@ -609,22 +602,23 @@ G.Maps = (function () {
       for (let d = -1; d <= 1; d++) for (let y = 7; y <= 9; y++) { w.set(40 + d, y, z0, B.AIR); w.set(40 + d, y, z1, B.AIR); w.set(x0, y, 40 + d, B.AIR); w.set(x1, y, 40 + d, B.AIR); }
       // chemin de ronde accessible par escaliers
       for (let x = x0 + 1; x < x1; x++) { w.set(x, 10, z0 + 1, B.PLANKS); w.set(x, 10, z1 - 1, B.PLANKS); }
-      stairs(w, x0 + 4, z0 + 2, 6, 3, 1, 0, B.PLANKS, 1); stairs(w, x1 - 4, z1 - 2, 6, 3, -1, 0, B.PLANKS, 1);
+      stairs(w, x0 + 4, z0 + 2, 6, 3, 1, 0, B.PLANKS, 1, 3); stairs(w, x1 - 4, z1 - 2, 6, 3, -1, 0, B.PLANKS, 1, 2);
       for (const [tx, tz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) { w.fill(tx - 1, 7, tz - 1, tx + 1, 12, tz + 1, B.COBBLE); w.set(tx, 13, tz, B.GLOW); }
-      house(w, 34, 34, 6, 5, 6, 'e', B.PLANKS, B.LOG, B.SNOW);
-      house(w, 42, 43, 6, 5, 6, 'w', B.PLANKS, B.LOG, B.SNOW);
-      house(w, 32, 42, 6, 5, 6, 'e', B.STONEBRICK, B.LOG, B.SNOW); // armurerie
+      house(w, 34, 34, 6, 5, 6, 'e', B.PLANKS, B.LOG, B.SNOW_BLOCK);
+      house(w, 42, 43, 6, 5, 6, 'w', B.PLANKS, B.LOG, B.SNOW_BLOCK);
+      house(w, 32, 42, 6, 5, 6, 'e', B.STONEBRICK, B.LOG, B.SNOW_BLOCK); // armurerie
       for (const [x, z] of [[37, 41], [44, 38], [40, 22], [40, 58], [22, 40], [58, 40]]) { const t = w.top(x, z); w.set(x, t + 1, z, B.LOG); w.set(x, t + 2, z, B.LOG); w.set(x, t + 3, z, B.GLOW); }
       // lac gelé
       ellipse(16, 18, 12, 8, (x, z) => { const t = w.top(x, z); for (let y = t + 1; y < w.H; y++) w.set(x, y, z, B.AIR); w.set(x, t, z, B.ICE); });
       // chalets
-      for (const [cx, cz, d] of [[10, 52, 'e'], [18, 66, 'n'], [60, 14, 's']]) { const t = w.top(cx + 2, cz + 2); flatten(w, cx + 2, cz + 2, 5, t, B.SNOW, B.DIRT); house(w, cx, cz, 5, 5, t, d, B.LOG, B.LOG, B.SNOW); }
+      for (const [cx, cz, d] of [[10, 52, 'e'], [18, 66, 'n'], [60, 14, 's']]) { const t = w.top(cx + 2, cz + 2); flatten(w, cx + 2, cz + 2, 5, t, B.SNOW, B.DIRT); house(w, cx, cz, 5, 5, t, d, B.LOG, B.LOG, B.SNOW_BLOCK); }
       // belvédère au sommet de la montagne
       const mt = w.top(64, 62);
       for (let x = 61; x <= 67; x++) for (let z = 59; z <= 65; z++) { const t = w.top(x, z); for (let y = t + 1; y < mt; y++) w.set(x, y, z, (x + y + z) % 3 ? B.STONE : B.COBBLE); }
       w.fill(61, mt, 59, 67, mt, 65, B.PLANKS);
       for (const [x, z] of [[61, 59], [67, 59], [61, 65], [67, 65]]) for (let y = mt + 1; y <= mt + 3; y++) w.set(x, y, z, B.LOG);
-      w.fill(61, mt + 4, 59, 67, mt + 4, 65, B.SNOW); w.set(64, mt + 3, 62, B.GLOW);
+      w.fill(61, mt + 4, 59, 67, mt + 4, 65, B.SNOW_BLOCK); w.set(64, mt + 3, 62, B.GLOW);
+      w.belvedere = mt;
       // forêts denses : sol de terre et d'aiguilles, arbres plus hauts et plus gros
       for (const [fx, fz, rx, rz] of [[15, 37, 11, 10], [65, 30, 10, 9]]) {
         ellipse(fx, fz, rx, rz, (x, z, d) => { const t = w.top(x, z); if (w.get(x, t, z) === B.SNOW && (d < 0.8 || rnd() < 0.6)) w.set(x, t, z, rnd() < 0.12 ? B.SNOW : B.PODZOL); });
@@ -646,7 +640,7 @@ G.Maps = (function () {
         const t = w.top(x, z);
         if (!canTree(w, x, z, t, B.SNOW)) continue;
         const r = rnd();
-        if (r < 0.75) { pine(w, x, t, z, rnd); for (let y = t + 2; y < w.H - 1; y++) if (w.get(x, y, z) === B.PINE && !w.get(x, y + 1, z) && rnd() < 0.5) w.set(x, y + 1, z, B.SNOW); }
+        if (r < 0.75) { pine(w, x, t, z, rnd); for (let y = t + 2; y < w.H - 1; y++) if (w.get(x, y, z) === B.PINE && !w.get(x, y + 1, z) && rnd() < 0.5) w.set(x, y + 1, z, B.SNOW_BLOCK); }
         else if (r < 0.9) birch(w, x, t, z, rnd); else deadTree(w, x, t, z, rnd);
       }
       for (let i = 0; i < 24; i++) {
@@ -682,20 +676,23 @@ G.Maps = (function () {
   // tour à étages avec escaliers alternés (rangées différentes : aucun conflit entre niveaux)
   function tower(w, cx, cz, base, floors, mat, doors) {
     const top = base + floors * 4;
-    w.fill(cx - 3, base, cz - 3, cx + 3, top, cz + 3, mat);
-    w.fill(cx - 2, base + 1, cz - 2, cx + 2, top - 1, cz + 2, B.AIR);
-    for (let k = 1; k < floors; k++) w.fill(cx - 2, base + 4 * k, cz - 2, cx + 2, base + 4 * k, cz + 2, mat);
+    w.fill(cx - 4, base, cz - 4, cx + 4, top, cz + 4, mat);
+    w.fill(cx - 3, base + 1, cz - 3, cx + 3, top - 1, cz + 3, B.AIR);
+    for (let k = 1; k < floors; k++) w.fill(cx - 3, base + 4 * k, cz - 3, cx + 3, base + 4 * k, cz + 3, mat);
     for (let k = 0; k < floors; k++) {
       const F = base + 4 * k, even = k % 2 === 0;
-      const sx = even ? cx - 2 : cx + 2, d = even ? 1 : -1, rows = even ? [cz - 2, cz - 1] : [cz + 1, cz + 2];
-      flight(w, sx, 0, F, d, 0, B.DARKBRICK, rows, even ? [cz - 2, cz - 1, cz] : [cz, cz + 1, cz + 2]);
-      // meurtrières
-      for (const [x, z] of [[cx - 3, cz], [cx + 3, cz - 1], [cx, cz - 3], [cx - 1, cz + 3]]) w.set(x, F + 2, z, B.AIR);
-      w.set(cx, F + 3, cz, k === floors - 1 ? B.AIR : w.get(cx, F + 3, cz));
+      // volée de 3 marches le long d'un mur ; après la dernière marche : palier + 2 rangées libres
+      const sx = even ? cx - 2 : cx + 2, d = even ? 1 : -1, rows = even ? [cz - 3, cz - 2] : [cz + 2, cz + 3];
+      flight(w, sx, 0, F, d, 0, B.DARKBRICK, rows, even ? [cz - 3, cz - 2, cz - 1] : [cz + 1, cz + 2, cz + 3]);
+      // première marche tournée vers la pièce (départ en quart tournant, plus facile à prendre)
+      const wz = even ? cz - 1 : cz + 1;
+      w.setStair(sx, F + 1, wz, B.STAIR_DARK, even ? 3 : 2);
+      w.set(sx - d, F + 4, rows[0], B.AIR); w.set(sx - d, F + 4, rows[1], B.AIR); w.set(sx - d, F + 4, wz, B.AIR);
+      for (const [x, z] of [[cx - 4, cz], [cx + 4, cz - 2], [cx, cz - 4], [cx - 2, cz + 4]]) w.set(x, F + 2, z, B.AIR); // meurtrières
     }
-    for (let x = cx - 3; x <= cx + 3; x += 2) { w.set(x, top + 1, cz - 3, mat); w.set(x, top + 1, cz + 3, mat); }
-    for (let z = cz - 3; z <= cz + 3; z += 2) { w.set(cx - 3, top + 1, z, mat); w.set(cx + 3, top + 1, z, mat); }
-    w.set(cx + 2, top + 1, cz + 2, B.GLOW); w.set(cx - 2, base + 3, cz + 2, B.GLOW); w.set(cx + 2, base + 7, cz - 2, B.GLOW);
+    for (let x = cx - 4; x <= cx + 4; x += 2) { w.set(x, top + 1, cz - 4, mat); w.set(x, top + 1, cz + 4, mat); }
+    for (let z = cz - 4; z <= cz + 4; z += 2) { w.set(cx - 4, top + 1, z, mat); w.set(cx + 4, top + 1, z, mat); }
+    w.set(cx + 3, top + 1, cz + 3, B.GLOW); w.set(cx + 3, base + 3, cz, B.GLOW); w.set(cx - 3, base + 7, cz, B.GLOW); w.set(cx + 3, base + 11, cz, B.GLOW);
     for (const [x, z, y] of doors) { w.set(x, y, z, B.AIR); w.set(x, y + 1, z, B.AIR); }
     return top;
   }
@@ -722,7 +719,7 @@ G.Maps = (function () {
         const d = Math.hypot(x - VX, z - VZ), ang = Math.atan2(z - VZ, x - VX);
         const rough = 1 + 0.22 * Math.sin(3 * ang + 1.3) + 0.12 * Math.sin(7 * ang + 0.4);
         const cone = 18 - d * rough + (q(x * 0.3, z * 0.3) - 0.5) * 4;
-        h = Math.max(h, 7 + Math.max(0, Math.round(cone / 1.5) * 1.5));
+        h = Math.max(h, 7 + Math.max(0, Math.round(cone)));
         return h;
       }, (x, y, z, h) => {
         const d = Math.hypot(x - VX, z - VZ);
@@ -738,11 +735,7 @@ G.Maps = (function () {
       const peak = w.top(VX, VZ);
       ellipse(VX, VZ, 3.6, 3.6, (x, z) => { for (let y = peak - 3; y <= peak + 1; y++) w.set(x, y, z, B.AIR); w.set(x, peak - 3, z, B.LAVA); w.set(x, peak - 4, z, B.MAGMA); });
       ellipse(VX, VZ, 5.2, 5.2, (x, z, d) => { const t = w.top(x, z); if (d > 0.69 && rnd() < 0.5) w.set(x, t, z, B.MAGMA); });
-      // coulée de lave qui descend du cratère jusqu'à la rivière
-      for (let s2 = 3; s2 <= 13; s2++) for (let o = -1; o <= 1; o++) {
-        const x = VX + s2, z = VZ + Math.round(Math.sin(s2 * 0.5)) + o; const t = w.top(x, z);
-        if (t > 5) { w.set(x, t, z, B.LAVA); w.set(x, t - 1, z, B.MAGMA); }
-      }
+      w.lavaFlowFrom = { x: VX, z: VZ, peak };
       // plateau construit à l'ouest, cour du donjon
       for (let z = 32; z <= 56; z++) for (let x = 3; x <= 31; x++) { for (let y = 1; y < w.H; y++) w.set(x, y, z, y < 7 ? B.BASALT : y === 7 ? ((x + z) % 7 === 0 ? B.SCORIA_DARK : B.DARKBRICK) : B.AIR); }
       flatten(w, 40, 40, 13, 7, B.DARKBRICK, B.BASALT);
@@ -754,10 +747,10 @@ G.Maps = (function () {
         if (c === 14 && x < 27) continue; // la rivière nord naît au pied du volcan
         const zc = riverZ(c, x), hw = c === 14 && x < 44 ? 2 : 1; // plus large juste après le volcan
         for (let dz = -hw; dz <= hw; dz++) lavaCell(w, x, zc + dz);
-        for (const s of [-1, 1]) { bankCell(w, x, zc + s * (hw + 1), 4); bankCell(w, x, zc + s * (hw + 2), 5); bankCell(w, x, zc + s * (hw + 3), 6); }
+        for (const s of [-1, 1]) for (let r = 1; r <= 5; r++) bankCell(w, x, zc + s * (hw + r), 3 + r);
       }
       // bras de la rivière qui alimente le lac
-      for (let z = 14; z <= 32; z++) { const xc = 62 + Math.round(Math.sin(z * 0.3)); for (let dx = -1; dx <= 1; dx++) lavaCell(w, xc + dx, z); for (const s of [-1, 1]) { bankCell(w, xc + s * 2, z, 4); bankCell(w, xc + s * 3, z, 5); bankCell(w, xc + s * 4, z, 6); } }
+      for (let z = 14; z <= 32; z++) { const xc = 62 + Math.round(Math.sin(z * 0.3)); for (let dx = -1; dx <= 1; dx++) lavaCell(w, xc + dx, z); for (const s of [-1, 1]) for (let r = 1; r <= 5; r++) bankCell(w, xc + s * (1 + r), z, 3 + r); }
       // lac de lave à l'est, rives douces
       ellipse(68, 40, 8, 10, (x, z) => lavaCell(w, x, z));
       ellipse(68, 40, 10.5, 12.5, (x, z, d) => { if (Math.hypot((x - 68) / 8, (z - 40) / 10) >= 1) bankCell(w, x, z, d < 0.85 ? 4 : d < 0.93 ? 5 : 6); });
@@ -799,24 +792,24 @@ G.Maps = (function () {
       muret(44, 36, 46, 36);                                  // coin nord-est
       muret(36, 43, 39, 43);                                  // coin sud-ouest
       for (const [x, z] of [[46, 41], [46, 40], [41, 34], [37, 46], [39, 46], [36, 38], [43, 34], [44, 46]]) { w.set(x, 8, z, B.BARREL); if ((x + z) % 3 === 0) w.set(x, 9, z, B.BARREL); }
-      for (const [x, z] of [[24, 38], [27, 47], [19, 45], [8, 42], [29, 36]]) { w.set(x, 8, z, B.BARREL); w.set(x + 1, 8, z, B.CRATE); }
+      for (const [x, z] of [[24, 38], [27, 47], [19, 45], [18, 47], [29, 36]]) { w.set(x, 8, z, B.BARREL); w.set(x + 1, 8, z, B.CRATE); }
       // balcon intérieur du donjon + escalier
       w.fill(34, 11, 36, 35, 11, 43, B.DARKBRICK);
       stairs(w, 34, 46, 7, 4, 0, -1, B.DARKBRICK, 2);
       // deux tours reliées entre elles et au donjon
-      tower(w, 12, 40, 7, 3, B.DARKBRICK, [[15, 40, 8], [15, 41, 8], [15, 40, 12], [15, 41, 12], [12, 43, 16], [11, 43, 16]]);
-      tower(w, 12, 52, 7, 4, B.DARKBRICK, [[15, 52, 8], [15, 53, 8], [12, 49, 16], [11, 49, 16]]);
+      tower(w, 12, 40, 7, 3, B.DARKBRICK, [[16, 40, 8], [16, 41, 8], [16, 40, 12], [16, 41, 12], [9, 44, 16], [10, 44, 16]]);
+      tower(w, 12, 52, 7, 4, B.DARKBRICK, [[16, 52, 8], [16, 53, 8], [9, 48, 16], [10, 48, 16]]);
       // passerelle haute tour 1 → donjon (on passe dessous), piliers sur les côtés
-      for (let x = 16; x <= 33; x++) for (const z of [40, 41]) w.set(x, 11, z, B.DARKBRICK);
-      for (let x = 16; x <= 33; x++) { w.set(x, 12, 39, B.DARKBRICK); w.set(x, 12, 42, B.DARKBRICK); w.set(x, 11, 39, B.DARKBRICK); w.set(x, 11, 42, B.DARKBRICK); }
+      for (let x = 17; x <= 33; x++) for (const z of [40, 41]) w.set(x, 11, z, B.DARKBRICK);
+      for (let x = 17; x <= 33; x++) { w.set(x, 12, 39, B.DARKBRICK); w.set(x, 12, 42, B.DARKBRICK); w.set(x, 11, 39, B.DARKBRICK); w.set(x, 11, 42, B.DARKBRICK); }
       for (let x = 19; x <= 31; x += 4) for (const z of [39, 42]) for (let y = 8; y <= 10; y++) w.set(x, y, z, B.OBSIDIAN);
       for (let x = 22; x <= 30; x += 8) w.set(x, 12, 42, B.AIR);
       // escalier du sol vers la passerelle
-      stairs(w, 25, 43, 7, 4, 1, 0, B.DARKBRICK, 2);
+      stairs(w, 25, 43, 7, 4, 1, 0, B.DARKBRICK, 2, 3); // on monte vers +x puis on débouche à gauche sur la passerelle
       for (let x = 25; x <= 28; x++) w.set(x, 12, 42, B.AIR);
       // pont couvert entre les deux tours (3e niveau)
-      for (let z = 44; z <= 48; z++) for (let x = 11; x <= 12; x++) { w.set(x, 15, z, B.DARKBRICK); w.set(x, 18, z, B.DARKBRICK); }
-      for (let z = 44; z <= 48; z++) { for (let y = 15; y <= 18; y++) { w.set(10, y, z, y === 16 || y === 17 ? (z % 2 ? B.AIR : B.DARKBRICK) : B.DARKBRICK); w.set(13, y, z, y === 16 || y === 17 ? (z % 2 ? B.AIR : B.DARKBRICK) : B.DARKBRICK); } }
+      for (let z = 45; z <= 47; z++) for (let x = 9; x <= 10; x++) { w.set(x, 15, z, B.DARKBRICK); w.set(x, 18, z, B.DARKBRICK); w.set(x, 16, z, B.AIR); w.set(x, 17, z, B.AIR); }
+      for (let z = 45; z <= 47; z++) { for (let y = 15; y <= 18; y++) { w.set(8, y, z, y === 16 || y === 17 ? (z % 2 ? B.AIR : B.DARKBRICK) : B.DARKBRICK); w.set(11, y, z, y === 16 || y === 17 ? (z % 2 ? B.AIR : B.DARKBRICK) : B.DARKBRICK); } }
       // bâtisses au sol
       house(w, 20, 33, 6, 5, 7, 's', B.DARKBRICK, B.OBSIDIAN, B.DARKBRICK);
       house(w, 21, 48, 7, 6, 7, 'n', B.DARKBRICK, B.OBSIDIAN, B.DARKBRICK);
@@ -983,16 +976,21 @@ G.Maps = (function () {
       }
       // cratère de bombe qui ouvre sur les égouts
       const crater = (cx, cz, r) => {
-        for (let x = cx - r; x <= cx + r; x++) for (let z = cz - r; z <= cz + r; z++) {
-          const d = Math.hypot(x - cx, z - cz); if (d > r) continue;
-          const floor = Math.max(6, g - Math.round((1 - d / r) * 7));
+        const cn = G.makeNoise(77);
+        for (let x = cx - r - 3; x <= cx + r + 3; x++) for (let z = cz - r - 3; z <= cz + r + 3; z++) {
+          const d = Math.hypot(x - cx, z - cz), ang = Math.atan2(z - cz, x - cx);
+          const rr = r * (0.78 + 0.32 * cn(Math.cos(ang) * 2 + 5, Math.sin(ang) * 2 + 5) + 0.08 * Math.sin(ang * 5));
+          if (d > rr) continue;
+          const tunnel = w.get(x, 8, z) === B.AIR && w.get(x, 7, z) === B.AIR; // couloir d'égout sous le cratère
+          let floor = Math.max(6, g - Math.round((1 - d / rr) * 7 + (cn(x * 0.7, z * 0.7) - 0.5) * 2));
+          if (tunnel || floor <= 7 && Math.abs(x - 74) <= 1) floor = 6;
           for (let y = floor + 1; y <= g + 3; y++) w.set(x, y, z, B.AIR);
-          if (floor > 6 || w.get(x, 6, z) !== B.WATER) w.set(x, floor, z, d > r - 1.5 ? B.ASPHALT_CRACK : rnd() < 0.5 ? B.RUBBLE : B.GRAVEL);
+          if (!tunnel && w.get(x, floor, z) !== B.WATER) w.set(x, floor, z, d > rr - 1.5 ? B.ASPHALT_CRACK : rnd() < 0.45 ? B.RUBBLE : rnd() < 0.5 ? B.GRAVEL : B.ASH);
+          if (!tunnel && floor > 7 && rnd() < 0.06) w.set(x, floor + 1, z, rnd() < 0.5 ? B.RUBBLE : B.ASPHALT_CRACK);
         }
         for (let i = 0; i < 14; i++) { const a = rnd() * Math.PI * 2, x = Math.round(cx + Math.cos(a) * (r + 1)), z = Math.round(cz + Math.sin(a) * (r + 1)); if (!w.get(x, g + 1, z)) w.set(x, g + 1, z, B.RUBBLE); }
       };
       crater(74, 36, 7);
-      car(w, 69, 31, g, 'x');
       // voitures abandonnées sur les routes
       for (const c of ROADS) for (let a = 4; a < S - 6; a += 10) {
         if (onRoad(a) || onRoad(a + 3) || rnd() < 0.45) continue;
@@ -1069,11 +1067,134 @@ G.Maps = (function () {
   }
   G.topDown = topDown;
 
+  // lave qui s'écoule comme dans Minecraft : elle tombe, puis s'étale vers la pente la plus proche
+  function lavaFlow(w, { x: VX, z: VZ, peak }) {
+    const ly = peak - 3;
+    // brèche dans le bord du cratère, côté est
+    for (let x = VX + 2; x <= VX + 6; x++) for (let z = VZ - 1; z <= VZ + 1; z++) { for (let y = ly; y <= peak + 2; y++) w.set(x, y, z, B.AIR); w.set(x, ly - 1, z, B.MAGMA); if (Math.abs(z - VZ) <= 0) w.set(x, ly, z, x <= VX + 3 ? B.LAVA : B.LAVA_FLOW); }
+    let x = VX + 6, y = ly, z = VZ, prevDir = [1, 0];
+    const target = (xx) => Math.round(14 + Math.sin(xx * 0.12) * 3);
+    const place = (px, py, pz) => { if (w.get(px, py, pz) !== B.LAVA) w.set(px, py, pz, B.LAVA_FLOW); };
+    for (let step = 0; step < 500; step++) {
+      place(x, y, z);
+      if (w.get(x, 4, z) === B.LAVA && y <= 6) break; // arrivée dans la rivière
+      if (y <= 4) break;
+      // chute
+      const below = w.get(x, y - 1, z);
+      if (!w.isSolid(x, y - 1, z) && below !== B.LAVA) { y--; continue; }
+      if (below === B.LAVA) break;
+      // cherche la pente la plus proche (jusqu'à 5 blocs), comme la lave qui coule
+      let best = null, bd = 99;
+      for (const [dx, dz] of [[1, 0], [0, 1], [0, -1], [-1, 0]]) {
+        for (let k = 1; k <= 5; k++) {
+          const cx = x + dx * k, cz = z + dz * k;
+          if (w.isSolid(cx, y, cz)) break;
+          if (!w.isSolid(cx, y - 1, cz)) { const score = k + (dx === -1 ? 2 : 0) + (dz !== 0 && Math.sign(target(cx) - cz) !== dz ? 1 : 0); if (score < bd) { bd = score; best = [dx, dz]; } break; }
+        }
+      }
+      if (!best) {
+        // terrain plat ou bosse : on avance vers la rivière, quitte à creuser un peu
+        const dz = Math.sign(target(x) - z);
+        best = dz && Math.abs(target(x) - z) > 1 && Math.random() < 0.5 ? [0, dz] : [1, 0];
+        if (w.isSolid(x + best[0], y, z + best[1])) { w.set(x + best[0], y, z + best[1], B.AIR); w.set(x + best[0], y + 1, z + best[1], B.AIR); }
+      }
+      // un peu de largeur sur les replats
+      if (Math.random() < 0.35) { const [sx, sz] = [-best[1], best[0]]; if (!w.isSolid(x + sx, y, z + sz) && w.isSolid(x + sx, y - 1, z + sz)) place(x + sx, y, z + sz); }
+      x += best[0]; z += best[1]; prevDir = best;
+      if (x >= w.W - 1) break;
+    }
+  }
+  // comblement des cuvettes : depuis chaque case on peut toujours ressortir (descendre, ou monter d'un bloc au plus)
+  function fillPits(w, X0, Z0, X1, Z1, sides, topB, underB) {
+    const W = X1 - X0 + 1, D = Z1 - Z0 + 1;
+    const hgt = new Int16Array(W * D), done = new Uint8Array(W * D);
+    const liquid = (x, z) => { const t = w.top(x, z), a = w.get(x, t + 1, z); return a && G.BLOCKS[a].liquid; };
+    for (let z = Z0; z <= Z1; z++) for (let x = X0; x <= X1; x++) hgt[(z - Z0) * W + (x - X0)] = w.top(x, z);
+    const pq = [];
+    const push = (i, h) => { pq.push([h, i]); let k = pq.length - 1; while (k > 0) { const q = (k - 1) >> 1; if (pq[q][0] <= pq[k][0]) break; [pq[q], pq[k]] = [pq[k], pq[q]]; k = q; } };
+    const pop = () => { const top = pq[0], last = pq.pop(); if (pq.length) { pq[0] = last; let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let m = k; if (l < pq.length && pq[l][0] < pq[m][0]) m = l; if (r < pq.length && pq[r][0] < pq[m][0]) m = r; if (m === k) break; [pq[m], pq[k]] = [pq[k], pq[m]]; k = m; } } return top; };
+    for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+      const i = z * W + x;
+      if (liquid(x + X0, z + Z0)) { done[i] = 1; continue; }
+      const edge = (sides.includes('s') && z === D - 1) || (sides.includes('n') && z === 0) || (sides.includes('w') && x === 0) || (sides.includes('e') && x === W - 1);
+      if (edge) { done[i] = 1; push(i, hgt[i]); }
+    }
+    while (pq.length) {
+      const [h, i] = pop(); const x = i % W, z = (i / W) | 0;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + dx, nz = z + dz; if (nx < 0 || nz < 0 || nx >= W || nz >= D) continue;
+        const j = nz * W + nx; if (done[j]) continue; done[j] = 1;
+        if (hgt[j] < h - 1) { const wx = nx + X0, wz = nz + Z0; for (let y = hgt[j] + 1; y <= h - 1; y++) w.set(wx, y, wz, y === h - 1 ? topB : underB); hgt[j] = h - 1; }
+        push(j, Math.max(hgt[j], h - 1));
+      }
+    }
+  }
+  // désert : chemin de pierre naturel et sinueux qui descend du plateau de la pyramide vers l'ouest,
+  // et comblement des crevasses où l'on restait bloqué
+  function desertPath(w, rnd) {
+    fillPits(w, 0, 0, 79, 30, ['s'], B.REDSAND, B.SANDSTONE);
+    // chemin sinueux : du bord ouest du plateau jusqu'au sol au sud-ouest
+    const A = [49, 13], Bp = [33, 31];
+    const hA = 17, hB = w.top(Bp[0], Bp[1]);
+    let prevH = hA;
+    for (let i = 0; i <= 80; i++) {
+      const t = i / 80;
+      const px = A[0] + (Bp[0] - A[0]) * t + Math.sin(t * Math.PI * 2.4) * 3.5, pz = A[1] + (Bp[1] - A[1]) * t + Math.cos(t * Math.PI * 1.7) * 2.5;
+      let h = Math.round(hA + (hB - hA) * Math.pow(t, 0.85));
+      if (h < prevH - 1) h = prevH - 1; prevH = h;
+      const rad = 1.4 + Math.sin(t * 17) * 0.5 + rnd() * 0.4;
+      for (let x = Math.floor(px - rad); x <= Math.ceil(px + rad); x++) for (let z = Math.floor(pz - rad); z <= Math.ceil(pz + rad); z++) {
+        if (Math.hypot(x - px, z - pz) > rad) continue;
+        const top = w.top(x, z);
+        for (let y = h + 1; y <= Math.max(top, h + 3); y++) if (w.get(x, y, z) !== B.WATER) w.set(x, y, z, B.AIR);
+        for (let y = Math.min(top, h); y <= h; y++) w.set(x, y, z, y === h ? G.pick([B.STONE, B.STONE, B.GRAVEL, B.COBBLE, B.SANDSTONE]) : B.STONE);
+      }
+      // rochers et marches irrégulières sur les bords
+      if (rnd() < 0.25) { const a = rnd() * Math.PI * 2, bx = Math.round(px + Math.cos(a) * (rad + 1)), bz = Math.round(pz + Math.sin(a) * (rad + 1)); const tt = w.top(bx, bz); if (tt >= h) { w.set(bx, tt + 1, bz, rnd() < 0.5 ? B.ROCK : B.STONE); } }
+    }
+  }
+  // toundra : escalier vers le belvédère, salle en dessous et mine qui ressort au pied de la montagne
+  function belvedereMine(w, mt) {
+    // escalier extérieur (côté sud)
+    let n = 1; for (; n <= 9; n++) if (w.top(63, 65 + n) <= mt - n + 1) break;
+    stairs(w, 63, 65 + n, mt - n, n, 0, -1, B.COBBLE, 2);
+    // salle sous le belvédère
+    w.fill(62, mt - 4, 60, 66, mt - 1, 64, B.AIR);
+    w.fill(62, mt - 5, 60, 66, mt - 5, 64, B.PLANKS);
+    for (const [x, z] of [[62, 60], [66, 60], [62, 64], [66, 64]]) for (let y = mt - 4; y <= mt - 1; y++) w.set(x, y, z, B.LOG);
+    w.set(64, mt - 1, 64, B.GLOW); w.set(65, mt - 4, 63, B.CRATE); w.set(65, mt - 4, 62, B.BARREL);
+    // trappe + escalier qui descend du plancher du belvédère dans la salle
+    stairs(w, 62, 61, mt - 5, 5, 1, 0, B.PLANKS, 1);
+    // galerie de mine en pente vers l'ouest, puis à plat jusqu'à la sortie
+    let fy = mt - 5, x = 61;
+    for (let guard = 0; guard < 60 && x > 2; guard++, x--) {
+      const z0 = 61, z1 = 62;
+      const nextFy = Math.max(6, fy - 1);
+      const sloping = nextFy < fy;
+      fy = nextFy;
+      for (let z = z0 - 1; z <= z1 + 1; z++) for (let y = fy; y <= fy + 4; y++) if (!w.isSolid(x, y, z) && (z < z0 || z > z1 || y === fy || y === fy + 4)) w.set(x, y, z, B.STONE);
+      for (let z = z0; z <= z1; z++) { w.set(x, fy, z, B.GRAVEL); for (let y = fy + 1; y <= fy + 3; y++) w.set(x, y, z, B.AIR); }
+      if (sloping) for (let z = z0; z <= z1; z++) w.setStair(x, fy, z, B.STAIR_STONE, 0);
+      // boisage tous les 3 blocs, lanternes
+      if (x % 3 === 0) { for (let y = fy + 1; y <= fy + 3; y++) { w.set(x, y, z0 - 1, B.LOG); w.set(x, y, z1 + 1, B.LOG); } for (let z = z0 - 1; z <= z1 + 1; z++) w.set(x, fy + 4, z, B.PLANKS); }
+      if (x % 6 === 0) w.set(x, fy + 3, z0 - 1, B.GLOW);
+      w.details.push({ box: true, x0: x, y0: fy + 1, z0: z0 + 0.15, x1: x + 1, y1: fy + 1.06, z1: z0 + 0.25, tile: 'metal' });
+      w.details.push({ box: true, x0: x, y0: fy + 1, z0: z1 + 0.75, x1: x + 1, y1: fy + 1.06, z1: z1 + 0.85, tile: 'metal' });
+      // sortie : le terrain au-dessus n'est plus plus haut que la galerie
+      if (fy === 6 && w.top(x - 1, z0) <= fy + 1 && w.top(x - 2, z0) <= fy + 1) {
+        for (let k = 1; k <= 2; k++) for (let z = z0; z <= z1; z++) for (let y = fy + 1; y <= fy + 4; y++) w.set(x - k, y, z, B.AIR);
+        break;
+      }
+    }
+  }
   function create(id) {
     const def = list.find((m) => m.id === id) || list[0];
     const S = def.size;
     const w = new G.World(S, def.height, S);
     def.build(w, G.mulberry32(def.id.length * 1337 + def.stars));
+    if (w.lavaFlowFrom) { fillPits(w, 0, 0, 26, 30, ['s', 'e'], B.VOLCROCK, B.BASALT); lavaFlow(w, w.lavaFlowFrom); }
+    if (w.desertPath) desertPath(w, G.mulberry32(9));
+    if (w.belvedere) belvedereMine(w, w.belvedere);
     // aucune eau ou lave ne doit « flotter » : on borde chaque liquide par un bloc solide
     for (let y = 1; y < w.H; y++) for (let z = 0; z < w.D; z++) for (let x = 0; x < w.W; x++) {
       const b = w.data[w.idx(x, y, z)];
@@ -1102,7 +1223,20 @@ G.Maps = (function () {
     const raw = def.spawnsFn ? def.spawnsFn(S) : edgeSpawns(S, 3, 6);
     const spawns = [];
     for (const [x, z] of raw) { const y = w.standAt(x, z); if (y < 999 && w.nodeNear(x + 0.5, y, z + 0.5) >= 0) spawns.push([x, y, z]); }
-    return { def, world: w, playerSpawn: new THREE.Vector3(px + 0.5, py, pz + 0.5), spawns, portals: def.portals || [], carSpots: w.carSpots || [] };
+    // perchoirs : cases en hauteur à ciel ouvert (toits, tours, sommets) pour les tireurs
+    const perches = [];
+    w.computeFlow(px + 0.5, py, pz + 0.5);
+    for (let z = 2; z < S - 2; z += 2) for (let x = 2; x < S - 2; x += 2) {
+      const low = w.standAt(x, z); if (low >= 999) continue;
+      for (let y = w.H - 2; y >= low + 6; y--) {
+        const id = w.nav.nodeAt[w.idx(x, y, z)];
+        if (id < 0) continue;
+        let open = true; for (let yy = y + 2; yy < w.H; yy++) if (w.isSolid(x, yy, z)) { open = false; break; }
+        if (open && w.nav.dist[id] >= 0) perches.push({ x, y, z, id });
+        break;
+      }
+    }
+    return { def, world: w, playerSpawn: new THREE.Vector3(px + 0.5, py, pz + 0.5), spawns, portals: def.portals || [], carSpots: w.carSpots || [], perches };
   }
 
   return { list, create };

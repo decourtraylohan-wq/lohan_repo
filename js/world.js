@@ -8,7 +8,7 @@ G.B = {
   CAR_RED: 46, CAR_BLUE: 47, CAR_WHITE: 48, AWNING: 49, WHITEWALL: 50, TIRE: 51, BOOKSHELF: 52, SNOWGRASS: 53, CLAY: 54,
   BIRCH: 55, BIRCH_LEAVES: 56, DARK_LOG: 57, DARK_LEAVES: 58, AUTUMN_LEAVES: 59, SANDBAG: 60, CHISELED: 61, PORTAL: 62, BUSH: 63, MUD: 64, ROCK: 65, SCORIA: 66, SCORIA_DARK: 67, PODZOL: 68, BARBED: 69, WALLPANEL: 70,
   VOLCROCK: 71, BASALT2: 72, ASH: 73, SCORIA3: 74, ASPHALT_CRACK: 75, BARREL: 76, LOCKER: 77, BIN: 78, GRAFFITI1: 79, GRAFFITI2: 80, RUBBLE: 81, CABINET: 82,
-  STAIR_STONE: 83, STAIR_WOOD: 84, STAIR_DARK: 85, STAIR_CONCRETE: 86, STAIR_SAND: 87, STAIR_METAL: 88,
+  STAIR_STONE: 83, STAIR_WOOD: 84, STAIR_DARK: 85, STAIR_CONCRETE: 86, STAIR_SAND: 87, STAIR_METAL: 88, SNOW_BLOCK: 89, LAVA_FLOW: 90,
 };
 
 G.BLOCKS = (function () {
@@ -98,6 +98,8 @@ G.BLOCKS = (function () {
   def(B.GRAFFITI2, 'graffiti2');
   def(B.RUBBLE, 'rubble');
   def(B.CABINET, 'cabinet');
+  def(B.SNOW_BLOCK, 'snow');
+  def(B.LAVA_FLOW, 'lava', null, null, { solid: false, opaque: false, liquid: true, bright: true, bulletPass: true, flow: true });
   // marches d'escalier (forme de vraie marche, collision d'un bloc plein)
   const stair = { opaque: false, stair: true };
   def(B.STAIR_STONE, 'stonebrick', null, null, stair);
@@ -252,7 +254,7 @@ G.World = class {
           aos.push(s1 && s2 ? 0 : 3 - (s1 + s2 + co));
         }
         const base = grp.pos.length / 3;
-        const liquidTopDrop = def.liquid ? 0.12 : 0;
+        const liquidTopDrop = def.liquid ? (def.flow ? 0.4 : 0.12) : 0;
         const surface = def.liquid && !(this.get(x, y + 1, z) && G.BLOCKS[this.get(x, y + 1, z)].liquid);
         for (let i = 0; i < 4; i++) {
           const c = F.v[i];
@@ -467,7 +469,7 @@ G.World = class {
       if (!this.canStand(x, y, z)) continue;
       if (blocked.has(z * W + x)) continue;
       const b = this.get(x, y, z), bb = this.get(x, y - 1, z);
-      if (b === G.B.LAVA || bb === G.B.LAVA || bb === G.B.CACTUS) continue;
+      if (b === G.B.LAVA || bb === G.B.LAVA || b === G.B.LAVA_FLOW || bb === G.B.LAVA_FLOW || bb === G.B.CACTUS) continue;
       nodeAt[this.idx(x, y, z)] = nx.length;
       nx.push(x); ny.push(y); nz.push(z);
     }
@@ -554,6 +556,19 @@ G.World = class {
       for (let y = Math.max(1, Math.floor(min.y) - 1); y <= Math.floor(min.y) + 1; y++) { const id = n.nodeAt[this.idx(x, y, z)]; if (id >= 0) { n.blocked[id] = Math.max(0, n.blocked[id] + delta); ids.push(id); } }
     }
     return ids;
+  }
+  fieldTo(target) {
+    const n = this.nav, dist = new Int32Array(n.N).fill(-1), q = n.queue;
+    let qh = 0, qt = 0; dist[target] = 0; q[qt++] = target;
+    while (qh < qt) { const c = q[qh++], cd = dist[c] + 1; for (let k = n.inStart[c]; k < n.inStart[c + 1]; k++) { const a = n.inList[k]; if (dist[a] !== -1 || n.blocked[a] > 0) continue; dist[a] = cd; q[qt++] = a; } }
+    return dist;
+  }
+  nextStepField(x, y, z, field) {
+    const n = this.nav, id = this.nodeNear(x, y, z);
+    if (id < 0) return null;
+    let best = -1, bd = field[id] < 0 ? 1e9 : field[id];
+    for (let k = n.outStart[id]; k < n.outStart[id + 1]; k++) { const t = n.outList[k], d = field[t]; if (d >= 0 && d < bd && !n.blocked[t]) { bd = d; best = t; } }
+    return best < 0 ? null : [n.nx[best], n.ny[best], n.nz[best]];
   }
   // champ de flux réservé aux grands boss (ne passent que dans les espaces larges)
   computeFlowBig(x, y, z) {

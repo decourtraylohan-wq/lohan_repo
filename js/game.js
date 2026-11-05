@@ -639,7 +639,7 @@ G.Game = class {
         const y = w.standAt(x, z); if (y >= 999) continue;
         if (Math.hypot(x + 0.5 - pl.x, z + 0.5 - pl.z) < md) continue;
         if (w.flowDistAt(x + 0.5, y, z + 0.5) < 0) continue;
-        if (w.blockAt(x, y + 0.5, z) === G.B.WATER || w.blockAt(x, y + 0.5, z) === G.B.LAVA) continue;
+        if (w.blockAt(x, y + 0.5, z) === G.B.WATER || w.blockAt(x, y + 0.5, z) === G.B.LAVA || w.blockAt(x, y + 0.5, z) === G.B.LAVA_FLOW) continue;
         return new THREE.Vector3(x + 0.5, y, z + 0.5);
       }
     }
@@ -1086,7 +1086,17 @@ G.Game = class {
     const target = pl.eye.clone(); target.y -= 0.3;
     const dirP = target.clone().sub(from); const dl = dirP.length(); dirP.normalize();
     let gN = 0; this.world.raycast(from.x, from.y, from.z, dirP.x, dirP.y, dirP.z, dl, (x, y, z, b) => { if (b === G.B.GLASS && gN++ < 2) this.breakGlass(x, y, z); });
-    const blockHit = this.world.solids.length ? this.world.solidOnRay(from, dirP, dl) : null;
+    let blockHit = this.world.solids.length ? this.world.solidOnRay(from, dirP, dl) : null;
+    if (blockHit) {
+      // le corps est caché (voiture, barricade) mais la tête dépasse : tir à la tête, plus difficile
+      const dH = pl.eye.clone().sub(from), lH = dH.length(); dH.normalize();
+      if (!this.world.solidOnRay(from, dH, lH, (o) => o.opaque || o.type === 'shield') && this.world.lineOfSight(from, pl.eye)) {
+        if (hits > 0 && Math.random() < 0.45) { this.tracer(from, pl.eye.clone(), 0xffb060); this.damagePlayer(dmg, e); return; }
+        const miss = pl.eye.clone().add(new THREE.Vector3(G.rand(-0.8, 0.8), G.rand(0.2, 1), G.rand(-0.8, 0.8)));
+        this.tracer(from, miss, 0xffb060); if (Math.random() < 0.5) G.Audio.S.whizz();
+        return;
+      }
+    }
     if (blockHit) {
       const end = from.clone().addScaledVector(dirP, blockHit.t);
       this.tracer(from, end, 0xffb060);

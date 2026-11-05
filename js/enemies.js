@@ -339,6 +339,12 @@ G.Enemy = class {
       if (this.vel.y < -30) this.vel.y = -30;
       this.blocked = false;
       w.moveEntity(this, dt, true);
+      if (w.solids.length && w.collides(this.pos.x, this.pos.y + 0.05, this.pos.z, this.w / 2, this.h - 0.1, 'enemy') && w.lastSolid) {
+        const o = w.lastSolid, hw = this.w / 2;
+        const pen = [[o.max.x + hw + 0.02 - this.pos.x, 'x', 1], [this.pos.x - (o.min.x - hw - 0.02), 'x', -1], [o.max.z + hw + 0.02 - this.pos.z, 'z', 1], [this.pos.z - (o.min.z - hw - 0.02), 'z', -1]];
+        pen.sort((a, b) => a[0] - b[0]);
+        for (const [d, ax, sg] of pen) { const np = this.pos.clone(); np[ax] += sg * d; if (!w.collides(np.x, np.y + 0.05, np.z, hw, this.h - 0.1, 'enemy')) { this.pos.copy(np); break; } }
+      }
       if (this.blocked && this.blockedBy && !this.blockedBy.dead && !this.blockedBy.wreck) {
         // une barricade bloque le passage : on la frappe
         if (this.atkT <= 0) { this.atkT = this.isBoss ? 1.0 : 1.1; this.lastAtk = game.time; game.damageBuild(this.blockedBy, this.isBoss ? this.dmg * 3 : this.soldier ? 40 : this.dmg * 1.5); }
@@ -357,7 +363,7 @@ G.Enemy = class {
       }
     }
     const fb = w.blockAt(this.pos.x, this.pos.y + 0.1, this.pos.z);
-    if (fb === G.B.LAVA && !this.isBoss) this.damage(this.maxHp * dt * 0.5, 'body', 'lava');
+    if ((fb === G.B.LAVA || fb === G.B.LAVA_FLOW) && !this.isBoss) this.damage(this.maxHp * dt * 0.5, 'body', 'lava');
     if (this.pos.y < -5) this.respawnFar();
 
     // détection de blocage
@@ -507,6 +513,10 @@ G.Enemy = class {
       return this.cover ? 0 : this.speed * 0.6;
     }
     const role = this.isBoss ? 'rifle' : T.role;
+    // tout près du joueur : on ne recule pas, on attaque au corps à corps
+    if (dist < 2.6 && Math.abs(dy) < 1.8 && !this.isBoss) { this.releaseCover(); this.goal = null; this.state = 'melee'; this.navMode = 'none'; moveDir.copy(toP).normalize(); return this.speed; }
+    if (this.state === 'melee') this.state = 'move';
+    if (role !== 'rush' && role !== 'melee') { const r = this.goalLogic(dt, dist, toP, moveDir, range, role); if (r !== undefined) return r; }
     if (role === 'rush') return this.engageOrAdvance(dt, dist, toP, moveDir, range, 1.35);
     if (role === 'melee') {
       // court de couvert en couvert puis fonce en zigzag
@@ -538,11 +548,12 @@ G.Enemy = class {
       if (T.id === 'heavy' && this.los && dist < range[1]) this.tryFire(dt, dist, 0.6);
       return this.speed * 1.5;
     }
-    if ((this.state === 'cover' || this.state === 'peek') && game.time - (this.lastSeen || game.time) > 8) { this.releaseCover(); this.state = 'move'; this.searchT = 3; this.lastSeen = game.time - 2; }
+    if ((this.state === 'cover' || this.state === 'peek') && game.time - (this.lastSeen || game.time) > (this.cover && this.cover.perch ? 14 : 8)) { this.releaseCover(); this.state = 'move'; this.searchT = 3; this.lastSeen = game.time - 2; }
     if (this.state === 'cover' || this.state === 'peek') {
       this.navMode = 'none';
-      const compromised = this.state === 'cover' && !this.hiddenLow && this.losT < 0.05;
-      if (compromised || dist < range[0] - 1 || dist > range[1] + 8) { this.releaseCover(); this.state = 'move'; this.searchT = 0; return this.speed; }
+      const compromised = this.state === 'cover' && !this.hiddenLow && this.losT < 0.05 && !this.cover.perch;
+      const perch = this.cover && this.cover.perch;
+      if (compromised || (!perch && (dist < range[0] - 1 || dist > range[1] + 8)) || (perch && dist > 60)) { this.releaseCover(); this.state = 'move'; this.searchT = 0; return this.speed; }
       if (this.state === 'cover') {
         this.crouching = true;
         if (this.ammo < (T.mag || 30) * 0.35) { this.state = 'reload'; this.stateT = T.reload; G.Audio.S.reload(this.pos); return 0; }
@@ -556,7 +567,7 @@ G.Enemy = class {
       if (this.stateT <= 0 || recentlyHit || (!this.los && this.stateT < 0.8)) {
         if (this.laser) this.updateLaser(false);
         // de temps en temps, on avance vers un abri plus proche
-        if (this.peeks >= 2 && Math.random() < 0.45 && dist > (range[0] + range[1]) / 2 || !this.los && Math.random() < 0.5) { this.releaseCover(); this.state = 'move'; this.searchT = 0; this.advance = true; return this.speed; }
+        if (!perch && (this.peeks >= 2 && Math.random() < 0.45 && dist > (range[0] + range[1]) / 2 || !this.los && Math.random() < 0.5)) { this.releaseCover(); this.state = 'move'; this.searchT = 0; this.advance = true; return this.speed; }
         this.state = 'cover'; this.stateT = G.rand(1.6, 3.4);
       }
       return 0;
@@ -578,6 +589,73 @@ G.Enemy = class {
       return this.speed * 1.3;
     }
     return this.engageOrAdvance(dt, dist, toP, moveDir, range, 1.25);
+  }
+  // ---------- objectifs lointains : toit d'un autre immeuble, position dans la rue, contournement ----------
+  goalLogic(dt, dist, toP, moveDir, range, role) {
+    const game = this.game, w = game.world, pl = game.player;
+    this.goalCD = (this.goalCD || 0) - dt;
+    if (this.state === 'goto') {
+      const gl = this.goal;
+      if (!gl || game.time > gl.until) { this.goal = null; this.state = 'move'; return undefined; }
+      const dx = gl.x - this.pos.x, dz = gl.z - this.pos.z;
+      if (Math.hypot(dx, dz) < 0.6 && Math.abs(gl.y - this.pos.y) < 1.3) {
+        this.cover = { x: gl.x, y: gl.y, z: gl.z, id: gl.id, perch: true, owner: this };
+        this.goal = null; this.state = 'peek'; this.stateT = G.rand(2, 3.5); this.aimT = 0; this.peeks = 0;
+        return 0;
+      }
+      this.navMode = 'none';
+      const nxt = w.nextStepField(this.pos.x, this.pos.y, this.pos.z, gl.field);
+      if (nxt) moveDir.set(nxt[0] + 0.5 - this.pos.x, 0, nxt[2] + 0.5 - this.pos.z).normalize(); else moveDir.set(dx, 0, dz).normalize();
+      if (this.los && dist < range[1] && role !== 'sniper') this.tryFire(dt, dist, 0.5);
+      return this.speed * 1.45;
+    }
+    if (this.state !== 'move' || this.goalCD > 0) return undefined;
+    this.goalCD = G.rand(3, 6);
+    const ground = w.standAt(Math.floor(pl.pos.x), Math.floor(pl.pos.z));
+    const playerHigh = ground < 999 && pl.pos.y - ground > 5;
+    let g = null;
+    const r = Math.random();
+    if (role === 'sniper' || role === 'far') g = r < 0.75 ? this.pickPerch() : this.pickOverwatch(18, 36);
+    else if (playerHigh) g = r < 0.35 ? this.pickPerch() : r < 0.7 ? this.pickOverwatch(14, 32) : null; // les autres montent par l'escalier
+    else if (!this.los && game.time - (this.lastSeen || -99) < 6 && dist < 26 && r < 0.45) g = this.pickOverwatch(7, 15); // contournement
+    if (!g) return undefined;
+    const field = w.fieldTo(g.id);
+    const here = w.nodeNear(this.pos.x, this.pos.y, this.pos.z);
+    if (here < 0 || field[here] < 0) return undefined;
+    this.releaseCover();
+    this.goal = { x: g.x + 0.5, y: g.y, z: g.z + 0.5, id: g.id, field, until: game.time + 30 };
+    this.state = 'goto';
+    return this.speed;
+  }
+  claimed(x, z) { return this.game.enemies.some((o) => o !== this && !o.dead && ((o.goal && Math.hypot(o.goal.x - x, o.goal.z - z) < 2.5) || (o.cover && o.cover.owner === o && Math.hypot(o.cover.x - x, o.cover.z - z) < 2.5))); }
+  pickPerch() {
+    const game = this.game, w = game.world, pl = game.player, P = game.map.perches || [];
+    if (!P.length) return null;
+    let best = null, bs = -1e9;
+    for (let i = 0; i < 30; i++) {
+      const c = P[Math.floor(Math.random() * P.length)];
+      const d = Math.hypot(c.x + 0.5 - pl.pos.x, c.z + 0.5 - pl.pos.z);
+      if (d < 12 || d > 55 || this.claimed(c.x + 0.5, c.z + 0.5)) continue;
+      if (w.nav.dist[c.id] < 0) continue;
+      const vis = w.lineOfSight(new THREE.Vector3(c.x + 0.5, c.y + 1.6, c.z + 0.5), pl.eye);
+      const sc = (vis ? 10 : 0) - Math.abs(d - 28) * 0.15 + c.y * 0.05 + Math.random();
+      if (sc > bs) { bs = sc; best = c; }
+    }
+    return best;
+  }
+  pickOverwatch(r0, r1) {
+    const game = this.game, w = game.world, pl = game.player;
+    for (let i = 0; i < 30; i++) {
+      const a = Math.random() * Math.PI * 2, rr = G.rand(r0, r1);
+      const x = Math.floor(pl.pos.x + Math.cos(a) * rr), z = Math.floor(pl.pos.z + Math.sin(a) * rr);
+      if (x < 2 || z < 2 || x >= w.W - 2 || z >= w.D - 2) continue;
+      const y = w.standAt(x, z); if (y >= 999) continue;
+      const id = w.nodeNear(x + 0.5, y, z + 0.5); if (id < 0 || w.nav.dist[id] < 0) continue;
+      if (w.get(x, y, z) === G.B.WATER || this.claimed(x + 0.5, z + 0.5)) continue;
+      if (!w.lineOfSight(new THREE.Vector3(x + 0.5, y + 1.6, z + 0.5), pl.eye)) continue;
+      return { x, y: w.nav.ny[id], z, id };
+    }
+    return null;
   }
   // combat à découvert (assaillants, ou tireurs sans abri)
   engageOrAdvance(dt, dist, toP, moveDir, range, runMul) {

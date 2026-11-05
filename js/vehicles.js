@@ -57,10 +57,13 @@ G.Vehicle = class {
   get forward() { return new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)); }
   get right() { return new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw)); }
   syncMesh() { this.mesh.position.copy(this.pos); this.mesh.rotation.y = this.yaw; }
-  footprint(p = this.pos, yaw = this.yaw) {
+  footprint(p = this.pos, yaw = this.yaw, dense) {
     const f = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), r = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
     const pts = [];
-    for (const a of [-0.48, 0, 0.48]) for (const b of [-0.46, 0.46]) pts.push(p.clone().addScaledVector(f, a * this.L).addScaledVector(r, b * this.W));
+    if (!dense) { for (const a of [-0.48, 0, 0.48]) for (const b of [-0.46, 0.46]) pts.push(p.clone().addScaledVector(f, a * this.L).addScaledVector(r, b * this.W)); return pts; }
+    // contour échantillonné tous les ~0,4 m : plus rien ne passe entre deux points
+    for (let a = -0.5; a <= 0.501; a += 0.1) for (const b of [-0.48, 0.48]) pts.push(p.clone().addScaledVector(f, a * this.L).addScaledVector(r, b * this.W));
+    for (const b of [-0.24, 0, 0.24]) for (const a of [-0.5, 0.5]) pts.push(p.clone().addScaledVector(f, a * this.L).addScaledVector(r, b * this.W));
     return pts;
   }
   updateSolid() {
@@ -74,13 +77,15 @@ G.Vehicle = class {
   }
   blockedAt(p, yaw) {
     const w = this.game.world;
-    for (const q of this.footprint(p, yaw)) {
+    const pts = this.footprint(p, yaw, true);
+    for (const q of pts) {
       const x = Math.floor(q.x), z = Math.floor(q.z);
       if (w.isSolid(x, Math.floor(p.y + 0.5), z) || w.isSolid(x, Math.floor(p.y + 1.2), z)) return true;
     }
     for (const o of w.solids) {
       if (o === this.solid) continue;
-      for (const q of this.footprint(p, yaw)) if (q.x > o.min.x && q.x < o.max.x && q.z > o.min.z && q.z < o.max.z && p.y + 0.5 < o.max.y && p.y + 1.2 > o.min.y) return true;
+      if (o.max.x < p.x - 4 || o.min.x > p.x + 4 || o.max.z < p.z - 4 || o.min.z > p.z + 4) continue;
+      for (const q of pts) if (q.x > o.min.x && q.x < o.max.x && q.z > o.min.z && q.z < o.max.z && p.y + 0.5 < o.max.y && p.y + 1.2 > o.min.y) return true;
     }
     return false;
   }
@@ -106,7 +111,17 @@ G.Vehicle = class {
       this.steer = G.lerp(this.steer, (input.left ? 1 : 0) - (input.right ? 1 : 0), Math.min(1, dt * 6));
     } else { this.speed *= Math.max(0, 1 - 3 * dt); this.steer *= 0.9; }
     if (Math.abs(this.speed) < 0.03) this.speed = 0;
-    if (this.speed !== 0) {
+    const sub = Math.max(1, Math.ceil(Math.abs(this.speed) * dt / 0.3));
+    for (let si = 0; si < sub && this.speed !== 0; si++) this.step(dt / sub);
+    this.wheelRot += this.speed * dt / 0.36;
+    for (const wh of this.wheels) { wh.t.rotation.x = this.wheelRot; wh.r.rotation.x = this.wheelRot; wh.piv.rotation.y = wh.front ? this.steer * 0.45 : 0; }
+    this.syncMesh();
+    this.updateSolid();
+    if (this.pos.distanceTo(this.blockPos) > 0.8 || (this.speed === 0 && this.pos.distanceTo(this.blockPos) > 0.05)) this.reblock();
+  }
+  step(dt) {
+    const game = this.game;
+    {
       const nyaw = this.yaw + this.steer * this.speed * 0.16 * dt;
       const np = this.pos.clone().addScaledVector(new THREE.Vector3(Math.sin(nyaw), 0, Math.cos(nyaw)), this.speed * dt);
       // suit le sol (marches d'un bloc au plus)
@@ -130,6 +145,7 @@ G.Vehicle = class {
             const dmg = Math.abs(this.speed) * (e.isBoss ? 25 : 60);
             game.damageEnemy(e, dmg, 'body', 'car');
             e.vel.addScaledVector(f, this.speed * 0.8); e.vel.y = 6;
+            const side = Math.sign(d.dot(r)) || 1; e.pos.addScaledVector(r, side * (this.W / 2 + 0.6 - Math.abs(d.dot(r))));
             this.damage(e.isBoss ? 120 : 15);
             game.particles(e.pos.clone().add(new THREE.Vector3(0, 1, 0)), 0x7a1010, 8, 4);
             if (e.isBoss) this.speed *= 0.2;
@@ -137,11 +153,6 @@ G.Vehicle = class {
         }
       }
     }
-    this.wheelRot += this.speed * dt / 0.36;
-    for (const wh of this.wheels) { wh.t.rotation.x = this.wheelRot; wh.r.rotation.x = this.wheelRot; wh.piv.rotation.y = wh.front ? this.steer * 0.45 : 0; }
-    this.syncMesh();
-    this.updateSolid();
-    if (this.pos.distanceTo(this.blockPos) > 0.8 || (this.speed === 0 && this.pos.distanceTo(this.blockPos) > 0.05)) this.reblock();
   }
   damage(n) {
     if (this.dead) return;

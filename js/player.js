@@ -186,12 +186,18 @@ G.Player = class {
       if (k.Space) this.vel.y = Math.min(this.vel.y + 14 * dt, 3.4);
       if (k.Space && this.blockedSide && w.blockAt(this.pos.x, this.pos.y + 1.7, this.pos.z) !== G.B.WATER) this.vel.y = 6.5;
     } else { this.vel.y -= 26 * dt; if (this.vel.y < -40) this.vel.y = -40; }
+    const fallV = this.vel.y, wasAir = !this.onGround;
     w.moveEntity(this, dt, true);
     this.blockedSide = this.blocked;
+    // dégâts de chute (pas dans l'eau)
+    if (wasAir && this.onGround && fallV < -15 && !this.swimming && w.blockAt(this.pos.x, this.pos.y + 0.2, this.pos.z) !== G.B.WATER) {
+      const dmg = Math.round((-fallV - 15) * 7);
+      if (dmg > 0) { game.damagePlayer(dmg, 'fall'); G.Audio.S.land(); game.shake(Math.min(0.6, dmg / 60)); }
+    }
     if (this.pos.y < -10) { this.pos.copy(game.map.playerSpawn); this.vel.set(0, 0, 0); }
 
     // lave
-    if (inBlock === G.B.LAVA || feet === G.B.LAVA) {
+    if (inBlock === G.B.LAVA || feet === G.B.LAVA || inBlock === G.B.LAVA_FLOW || feet === G.B.LAVA_FLOW) {
       this.lavaT -= dt;
       if (this.lavaT <= 0) { this.lavaT = 0.25; game.damagePlayer(9, 'lava'); }
     }
