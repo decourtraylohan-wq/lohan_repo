@@ -230,13 +230,27 @@ G.Maps = (function () {
     return s;
   }
   // escalier de 1 de large, monte de "n" marches dans la direction (dx,dz) à partir du sol gy
+  const STAIR_OF = { [B.PLANKS]: B.STAIR_WOOD, [B.DARKBRICK]: B.STAIR_DARK, [B.OBSIDIAN]: B.STAIR_DARK, [B.SANDSTONE]: B.STAIR_SAND, [B.CONCRETE]: B.STAIR_CONCRETE, [B.CONCRETE_DARK]: B.STAIR_CONCRETE, [B.SEWER]: B.STAIR_STONE, [B.GRATE]: B.STAIR_METAL, [B.METAL]: B.STAIR_METAL };
+  const dirOf = (dx, dz) => (dx > 0 ? 0 : dx < 0 ? 1 : dz > 0 ? 2 : 3);
   function stairs(w, x, z, gy, n, dx, dz, mat, width = 2) {
     const px = dz !== 0 ? 1 : 0, pz = dx !== 0 ? 1 : 0;
+    const sb = STAIR_OF[mat] || B.STAIR_STONE;
     for (let i = 0; i < n; i++) for (let k = 0; k < width; k++) {
       const cx = x + dx * i + px * k, cz = z + dz * i + pz * k;
-      for (let y = gy + 1; y <= gy + 1 + i; y++) w.set(cx, y, cz, mat);
+      for (let y = gy + 1; y <= gy + i; y++) w.set(cx, y, cz, mat);
+      w.setStair(cx, gy + 1 + i, cz, sb, dirOf(dx, dz));
       for (let y = gy + 2 + i; y <= gy + 4 + i; y++) w.set(cx, y, cz, B.AIR);
     }
+  }
+  // volée d'escalier intérieure : marches pleines + trémie dans le plafond au-dessus de TOUTES les marches
+  function flight(w, x, z, F, dx, dz, mat, rows, holeRows) {
+    const sb = STAIR_OF[mat] || B.STAIR_STONE, dir = dirOf(dx, dz);
+    for (let i = 0; i < 3; i++) for (const r of rows) {
+      const cx = dx ? x + dx * i : r, cz = dz ? z + dz * i : r;
+      for (let y = F + 1; y <= F + i; y++) w.set(cx, y, cz, mat);
+      w.setStair(cx, F + 1 + i, cz, sb, dir);
+    }
+    for (let i = 0; i < 3; i++) for (const r of holeRows) { const cx = dx ? x + dx * i : r, cz = dz ? z + dz * i : r; w.set(cx, F + 4, cz, B.AIR); }
   }
 
   // ================= Ville : immeubles, égouts =================
@@ -245,11 +259,14 @@ G.Maps = (function () {
     w.fill(x0, g + 1, z0, x1, top + 3, z1, B.AIR);
     const stairA = { x: x0 + 2, z: z0 + 2, d: 1 }, stairB = { x: x1 - 2, z: z1 - 3, d: -1 };
     const nearStair = (x, z) => [stairA, stairB].some((s) => { const xa = Math.min(s.x, s.x + s.d * 4), xb = Math.max(s.x, s.x + s.d * 4); return x >= xa - 1 && x <= xb + 1 && z >= s.z - 1 && z <= s.z + 2; });
+    const mx = Math.floor((x0 + x1) / 2), mz = Math.floor((z0 + z1) / 2);
+    const wide = x1 - x0 >= 12 && z1 - z0 >= 12;
     for (let k = 0; k <= nf; k++) {
       const F = g + 4 * k;
       w.fill(x0, F, z0, x1, F, z1, k === 0 ? o.floor : k === nf ? B.ROOF : B.CONCRETE);
-      if (k > 0) for (let z = z0 + 3; z < z1 - 1; z += 5) for (let x = x0 + 3; x < x1 - 1; x += 5) if (!nearStair(x, z)) w.set(x, F, z, B.GLOW);
+      if (k > 0) for (let z = z0 + 3; z < z1 - 1; z += 5) for (let x = x0 + 3; x < x1 - 1; x += 5) if (!nearStair(x, z) && x !== mx && z !== mz) w.set(x, F, z, B.GLOW);
     }
+    const free = (x, z) => !nearStair(x, z) && !(wide && (x === mx || z === mz && x < mx)) && !(Math.abs(x - mx) <= 1 && (z === z0 + 1 || z === z1 - 1)) && !(Math.abs(z - mz) <= 1 && (x === x0 + 1 || x === x1 - 1));
     for (let k = 0; k < nf; k++) {
       const F = g + 4 * k;
       for (let y = F + 1; y <= F + 3; y++) {
@@ -261,32 +278,79 @@ G.Maps = (function () {
           let b = o.wall;
           if (!pillar && (o.glassFull ? true : y === F + 2)) b = B.GLASS;
           if (!pillar && y === F + 1 && !o.glassFull) b = o.wall;
+          if (k === 0 && y <= F + 2 && o.graffiti && b !== B.GLASS && rnd() < 0.35) b = rnd() < 0.5 ? B.GRAFFITI1 : B.GRAFFITI2;
           w.set(x, y, z, b);
         }
       }
-      // escaliers alternés
+      // escaliers alternés (vraies marches)
       const s = k % 2 === 0 ? stairA : stairB;
-      for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) {
-        const cx = s.x + s.d * i, cz = s.z + j;
-        for (let y = F + 1; y <= F + 1 + i; y++) w.set(cx, y, cz, o.stair || B.STONEBRICK);
+      flight(w, s.x, 0, F, s.d, 0, o.stair || B.CONCRETE, [s.z, s.z + 1], [s.z - 1, s.z, s.z + 1, s.z + 2]);
+      // cloisons : pièces et couloir (portes de 2 blocs)
+      if (wide) {
+        for (let z = z0 + 1; z < z1; z++) if (Math.abs(z - (z0 + 4)) > 1 && Math.abs(z - (z1 - 4)) > 1 && Math.abs(z - mz) > 0) for (let y = F + 1; y <= F + 3; y++) w.set(mx, y, z, k === 0 ? B.WHITEWALL : B.WALLPANEL);
+        for (let x = x0 + 1; x < mx; x++) if (!nearStair(x, mz) && Math.abs(x - (x0 + mx) / 2) > 1) for (let y = F + 1; y <= F + 3; y++) w.set(x, y, mz, B.WALLPANEL);
       }
-      for (let i = 1; i < 3; i++) for (let j = -1; j <= 2; j++) w.set(s.x + s.d * i, F + 4, s.z + j, B.AIR);
-      // mobilier
-      for (let n = 0; n < (x1 - x0) * (z1 - z0) / 18; n++) {
-        const x = x0 + 2 + Math.floor(rnd() * (x1 - x0 - 3)), z = z0 + 2 + Math.floor(rnd() * (z1 - z0 - 3));
-        if (nearStair(x, z) || Math.abs(x - (x0 + x1) / 2) < 2 || Math.abs(z - (z0 + z1) / 2) < 2) continue;
-        w.set(x, F + 1, z, G.pick([B.CRATE, B.BOOKSHELF, B.PLANKS, B.CRATE]));
-        if (rnd() < 0.3) w.set(x, F + 2, z, B.CRATE);
+      const put = (x, z, b, h = 1) => { if (free(x, z) && !w.get(x, F + 1, z)) for (let y = 1; y <= h; y++) w.set(x, F + y, z, b); };
+      if (k === 0) {
+        // accueil : comptoir, casiers, plantes
+        for (let x = mx - 2; x <= mx + 2; x++) put(x, mz + 2, B.PLANKS);
+        put(mx - 2, mz + 3, B.PLANKS); put(mx + 2, mz + 3, B.PLANKS);
+        for (let z = z0 + 2; z < z1 - 1; z += 1) if (z % 3 !== 0) put(x1 - 1, z, B.LOCKER, 2);
+        put(x0 + 1, z1 - 1, B.BUSH); put(x1 - 1, z1 - 1, B.BUSH);
+      } else {
+        // bureaux : rangées de bureaux, armoires, casiers, bibliothèques
+        for (let z = z0 + 2; z < z1 - 1; z += 3) for (let x = mx + 2; x < x1 - 1; x += 3) { put(x, z, B.PLANKS); put(x + 1, z, B.PLANKS); if (rnd() < 0.5) put(x, z + 1, B.CRATE); }
+        for (let x = x0 + 2; x < mx - 1; x += 2) if (rnd() < 0.6) put(x, z1 - 1, rnd() < 0.5 ? B.CABINET : B.BOOKSHELF, rnd() < 0.5 ? 2 : 1);
+        for (let z = mz + 2; z < z1 - 1; z += 2) if (rnd() < 0.5) put(x0 + 1, z, B.LOCKER, 2);
+        if (rnd() < 0.5) put(x0 + 1, z0 + 6, B.CRATE);
       }
     }
     // portes au rez-de-chaussée sur les quatre faces
-    const mx = Math.floor((x0 + x1) / 2), mz = Math.floor((z0 + z1) / 2);
     for (const [x, z] of [[mx, z0], [mx + 1, z0], [mx, z1], [mx + 1, z1], [x0, mz], [x0, mz + 1], [x1, mz], [x1, mz + 1]]) { w.set(x, g + 1, z, B.AIR); w.set(x, g + 2, z, B.AIR); }
     // toit : parapet et climatiseurs
     for (let x = x0; x <= x1; x++) { w.set(x, top + 1, z0, o.wall); w.set(x, top + 1, z1, o.wall); }
     for (let z = z0; z <= z1; z++) { w.set(x0, top + 1, z, o.wall); w.set(x1, top + 1, z, o.wall); }
     for (let i = 0; i < 3; i++) { const x = x0 + 3 + Math.floor(rnd() * (x1 - x0 - 6)), z = z0 + 5 + Math.floor(rnd() * (z1 - z0 - 8)); if (!nearStair(x, z)) w.set(x, top + 1, z, B.METAL); }
+    // dégâts : trous dans la façade, angle effondré, gravats
+    if (o.damaged) {
+      for (let i = 0; i < 4; i++) {
+        const k = 1 + Math.floor(rnd() * (nf - 1)), F = g + 4 * k, side = Math.floor(rnd() * 4);
+        const t = 2 + Math.floor(rnd() * Math.max(1, (side < 2 ? x1 - x0 : z1 - z0) - 5));
+        for (let dy = 1; dy <= 2; dy++) for (let d = 0; d < 2; d++) {
+          const x = side === 0 ? x0 + t + d : side === 1 ? x0 + t + d : side === 2 ? x0 : x1, z = side === 0 ? z0 : side === 1 ? z1 : z0 + t + d;
+          w.set(x, F + dy, z, B.AIR);
+        }
+      }
+      if (rnd() < 0.6 && nf >= 3) {
+        const cx = rnd() < 0.5 ? x0 : x1 - 3, cz = rnd() < 0.5 ? z0 : z1 - 3;
+        for (let x = cx; x <= cx + 3; x++) for (let z = cz; z <= cz + 3; z++) { if (nearStair(x, z)) continue; for (let y = top - 4; y <= top + 2; y++) w.set(x, y, z, B.AIR); }
+        for (let i = 0; i < 10; i++) { const x = cx - 2 + Math.floor(rnd() * 8), z = cz - 2 + Math.floor(rnd() * 8); if (w.get(x, g + 1, z) === B.AIR && !nearStair(x, z)) w.set(x, g + 1, z, B.RUBBLE); }
+      }
+    }
+    if (o.fireEscape) fireEscape(w, x0, z0, x1, z1, nf, o.fireEscape, g);
     return top;
+  }
+  // escalier de secours métallique sur une façade (côté 'e' ou 'w'), à la new-yorkaise
+  function fireEscape(w, x0, z0, x1, z1, nf, side, g) {
+    const x = side === 'e' ? x1 + 1 : x0 - 1, zs = z0 + 1, wallX = side === 'e' ? x1 : x0;
+    if (z1 - z0 < 10) return;
+    for (let L = 0; L < nf; L++) {
+      const F = g + 4 * L, P = F + 4, even = L % 2 === 0;
+      // volée : paire = montée +z (zs+1..zs+3), impaire = montée −z (zs+7..zs+5) ; les paliers se superposent en zs+4
+      const steps = even ? [zs + 1, zs + 2, zs + 3] : [zs + 7, zs + 6, zs + 5];
+      steps.forEach((z, i) => { for (let y = F + 1; y <= F + i; y++) w.set(x, y, z, B.METAL); w.setStair(x, F + 1 + i, z, B.STAIR_METAL, even ? 2 : 3); });
+      // palier au niveau suivant, ouvert au-dessus de la volée et de sa case de départ
+      for (let z = zs; z <= zs + 8; z++) {
+        const open = even ? z <= zs + 3 : z >= zs + 5;
+        if (!open) w.set(x, P, z, B.GRATE);
+      }
+      // garde-corps (détails sans collision)
+      const ox = side === 'e' ? x + 0.92 : x + 0.02;
+      w.details.push({ box: true, x0: ox, y0: P + 1, z0: zs, x1: ox + 0.06, y1: P + 1.08, z1: zs + 9, tile: 'metal' });
+      for (let z = zs; z <= zs + 9; z += 3) w.details.push({ box: true, x0: ox, y0: P + 1, z0: z, x1: ox + 0.06, y1: P + 2.05, z1: z + 0.06, tile: 'metal' });
+      // porte-fenêtre d'accès à l'étage
+      if (L < nf - 1) { w.set(wallX, P + 1, zs + 4, B.AIR); w.set(wallX, P + 2, zs + 4, B.AIR); }
+    }
   }
   function shop(w, x0, z0, x1, z1, g, wall) {
     w.fill(x0, g + 1, z0, x1, g + 6, z1, B.AIR);
@@ -324,7 +388,7 @@ G.Maps = (function () {
       const n = G.makeNoise(101);
       terrain(w, (x, z) => {
         let h = 6 + (n(x * 0.05, z * 0.05) - 0.5) * 6;
-        const hill = Math.max(0, 1 - Math.hypot(x - 15, z - 15) / 16); h += hill * hill * 11;
+        const hill = Math.max(0, 1 - Math.hypot(x - 15, z - 15) / 22); h += hill * hill * 15 + hill * 2;
         return h;
       }, (x, y, z, h) => (y === h ? B.GRASS : y > h - 3 ? B.DIRT : B.STONE));
       flatten(w, 40, 40, 16, 6, B.GRASS, B.DIRT);
@@ -349,7 +413,7 @@ G.Maps = (function () {
       house(w, 45, 46, 7, 7, 6, 'n', B.PLANKS, B.LOG, B.STONEBRICK);
       house(w, 52, 37, 5, 6, 6, 'w', B.BRICK, B.LOG, B.STONEBRICK);
       // puits
-      w.fill(39, 7, 35, 41, 7, 37, B.COBBLE); w.set(40, 7, 36, B.WATER); w.set(40, 6, 36, B.WATER);
+      w.fill(39, 7, 35, 41, 7, 37, B.COBBLE); w.set(40, 7, 36, B.WATER); w.set(40, 6, 36, B.COBBLE);
       for (const [x, z] of [[26, 39], [26, 41], [54, 46], [37, 27], [44, 54]]) w.set(x, 7, z, rnd() < 0.5 ? B.HAY : B.CRATE);
       // champ de blé avec canaux d'irrigation
       for (let z = 54; z < 74; z++) for (let x = 6; x < 28; x++) {
@@ -386,19 +450,20 @@ G.Maps = (function () {
       decorate(w, rnd, B.GRASS, [[B.TALLGRASS, 0.12], [B.FLOWER_R, 0.012], [B.FLOWER_Y, 0.012]]);
     },
     player: [40, 42],
+    // stations cachées dans les maisons
     stations: [
-      { type: 'box', x: 42, z: 42 },
-      { type: 'wall', weapon: 'smg', x: 36, z: 35 },
-      { type: 'wall', weapon: 'shotgun', x: 44, z: 35 },
-      { type: 'wall', weapon: 'rifle', x: 36, z: 45 },
+      { type: 'box', x: 55, z: 41 },
+      { type: 'wall', weapon: 'smg', x: 30, z: 33 },
+      { type: 'wall', weapon: 'shotgun', x: 50, z: 29 },
+      { type: 'wall', weapon: 'rifle', x: 34, z: 51 },
       { type: 'wall', weapon: 'sniper', x: 15, z: 14 },
-      { type: 'perk', perk: 'cuirasse', x: 32, z: 31, wave: 1 },
-      { type: 'perk', perk: 'rafale', x: 48, z: 31, wave: 3 },
-      { type: 'perk', perk: 'mainleste', x: 32, z: 49, wave: 5 },
-      { type: 'perk', perk: 'souffle', x: 48, z: 49, wave: 2 },
-      { type: 'perk', perk: 'foulee', x: 27, z: 44, wave: 4 },
+      { type: 'perk', perk: 'cuirasse', x: 34, z: 29, wave: 1 },
+      { type: 'perk', perk: 'rafale', x: 46, z: 29, wave: 3 },
+      { type: 'perk', perk: 'mainleste', x: 46, z: 51, wave: 5 },
+      { type: 'perk', perk: 'souffle', x: 30, z: 51, wave: 2 },
+      { type: 'perk', perk: 'foulee', x: 30, z: 47, wave: 4 },
       { type: 'perk', perk: 'bandouliere', x: 13, z: 44, wave: 7 },
-      { type: 'forge', x: 38, z: 38, wave: 8 },
+      { type: 'forge', x: 50, z: 51, wave: 8 },
       { type: 'bench', x: 30, z: 29 },
       { type: 'bench', x: 10, z: 46 },
     ],
@@ -464,6 +529,31 @@ G.Maps = (function () {
       for (let dx = -1; dx <= 0; dx++) { w.set(tx + dx, 2, tz - 5, B.AIR); w.set(tx + dx, 3, tz - 5, B.AIR); w.set(tx + dx, 1, tz - 5, B.SANDSTONE); }
       // cactus et buissons morts
       portalPad(w, 16, 1, 61);
+      // crête rocheuse à l'est du plateau et grotte qui la traverse jusqu'en bas
+      for (let z = 0; z < 42; z++) for (let x = 69; x < 80; x++) {
+        const top = Math.round(z <= 24 ? 22 + Math.sin(x * 0.7) : 22 - (z - 24) * 1.25 + Math.sin(x * 0.7));
+        if (top <= w.top(x, z)) continue;
+        for (let y = 1; y <= top; y++) w.set(x, y, z, y > top - 2 ? B.REDSAND : y % 3 === 0 ? B.CLAY : B.REDSAND);
+      }
+      const cave = [];
+      for (let x = 66; x <= 76; x++) cave.push([x, 12, 17]);
+      for (let z = 13; z <= 42; z++) cave.push([76, z, Math.max(5, 17 - Math.floor((z - 12) * 0.42))]);
+      for (const [cx, cz, fy] of cave) for (let o = -1; o <= 1; o++) {
+        const x = cz === 12 && cx < 76 ? cx : cx + o, z = cz === 12 && cx < 76 ? cz + o : cz;
+        w.set(x, fy, z, B.SANDSTONE);
+        for (let y = fy + 1; y <= fy + 3; y++) w.set(x, y, z, B.AIR);
+        if (o === 0 && (cx + cz) % 6 === 0 && w.isSolid(x, fy + 4, z)) w.set(x, fy + 4, z, B.GLOW);
+      }
+      // murets (abris) à côté des stations autour de la ziggourat
+      for (const [x, z] of [[40, 28], [30, 34], [50, 34], [30, 46], [50, 46], [34, 29], [46, 29], [28, 40], [52, 40], [34, 51], [31, 37]]) {
+        const ox = Math.sign(x - 40), oz = Math.sign(z - 40);
+        const t = w.top(x, z);
+        for (let k = -1; k <= 1; k++) {
+          const a = [x + ox * 1 + (oz ? k : 0), z + oz * 1 + (ox ? k : 0)];
+          if (ox || oz) for (let y = t + 1; y <= t + 2; y++) w.set(a[0], y, a[1], k === 0 && y === t + 2 ? B.CHISELED : B.SANDSTONE);
+        }
+        if (ox && oz) { w.set(x + ox, t + 1, z, B.SANDSTONE); w.set(x, t + 1, z + oz, B.SANDSTONE); }
+      }
       for (let i = 0; i < 70; i++) {
         const x = 3 + Math.floor(rnd() * 74), z = 3 + Math.floor(rnd() * 74);
         if (Math.hypot(x - 40, z - 40) < 16) continue;
@@ -523,6 +613,7 @@ G.Maps = (function () {
       for (const [tx, tz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) { w.fill(tx - 1, 7, tz - 1, tx + 1, 12, tz + 1, B.COBBLE); w.set(tx, 13, tz, B.GLOW); }
       house(w, 34, 34, 6, 5, 6, 'e', B.PLANKS, B.LOG, B.SNOW);
       house(w, 42, 43, 6, 5, 6, 'w', B.PLANKS, B.LOG, B.SNOW);
+      house(w, 32, 42, 6, 5, 6, 'e', B.STONEBRICK, B.LOG, B.SNOW); // armurerie
       for (const [x, z] of [[37, 41], [44, 38], [40, 22], [40, 58], [22, 40], [58, 40]]) { const t = w.top(x, z); w.set(x, t + 1, z, B.LOG); w.set(x, t + 2, z, B.LOG); w.set(x, t + 3, z, B.GLOW); }
       // lac gelé
       ellipse(16, 18, 12, 8, (x, z) => { const t = w.top(x, z); for (let y = t + 1; y < w.H; y++) w.set(x, y, z, B.AIR); w.set(x, t, z, B.ICE); });
@@ -570,18 +661,18 @@ G.Maps = (function () {
     },
     player: [38, 39],
     stations: [
-      { type: 'box', x: 40, z: 40 },
-      { type: 'wall', weapon: 'smg', x: 32, z: 40 },
-      { type: 'wall', weapon: 'shotgun', x: 48, z: 40 },
-      { type: 'wall', weapon: 'rifle', x: 40, z: 32 },
+      { type: 'box', x: 43, z: 44 },
+      { type: 'wall', weapon: 'smg', x: 38, z: 35 },
+      { type: 'wall', weapon: 'shotgun', x: 46, z: 44 },
+      { type: 'wall', weapon: 'rifle', x: 33, z: 43 },
       { type: 'wall', weapon: 'sniper', x: 63, z: 61 },
-      { type: 'perk', perk: 'cuirasse', x: 32, z: 32, wave: 1 },
-      { type: 'perk', perk: 'souffle', x: 48, z: 32, wave: 2 },
-      { type: 'perk', perk: 'rafale', x: 32, z: 48, wave: 3 },
-      { type: 'perk', perk: 'mainleste', x: 48, z: 48, wave: 5 },
-      { type: 'perk', perk: 'foulee', x: 36, z: 45, wave: 4 },
-      { type: 'perk', perk: 'bandouliere', x: 12, z: 54, wave: 7 },
-      { type: 'forge', x: 43, z: 41, wave: 8 },
+      { type: 'perk', perk: 'cuirasse', x: 35, z: 37, wave: 1 },
+      { type: 'perk', perk: 'souffle', x: 46, z: 46, wave: 2 },
+      { type: 'perk', perk: 'rafale', x: 33, z: 45, wave: 3 },
+      { type: 'perk', perk: 'mainleste', x: 19, z: 69, wave: 5 },
+      { type: 'perk', perk: 'foulee', x: 21, z: 69, wave: 4 },
+      { type: 'perk', perk: 'bandouliere', x: 11, z: 55, wave: 7 },
+      { type: 'forge', x: 36, z: 43, wave: 8 },
       { type: 'bench', x: 35, z: 35 },
       { type: 'bench', x: 11, z: 53 },
     ],
@@ -597,9 +688,7 @@ G.Maps = (function () {
     for (let k = 0; k < floors; k++) {
       const F = base + 4 * k, even = k % 2 === 0;
       const sx = even ? cx - 2 : cx + 2, d = even ? 1 : -1, rows = even ? [cz - 2, cz - 1] : [cz + 1, cz + 2];
-      for (let i = 0; i < 3; i++) for (const z of rows) { for (let y = F + 1; y <= F + 1 + i; y++) w.set(sx + d * i, y, z, B.OBSIDIAN); }
-      const holeRows = even ? [cz - 2, cz - 1, cz] : [cz, cz + 1, cz + 2];
-      for (let i = 1; i < 3; i++) for (const z of holeRows) w.set(sx + d * i, F + 4, z, B.AIR);
+      flight(w, sx, 0, F, d, 0, B.DARKBRICK, rows, even ? [cz - 2, cz - 1, cz] : [cz, cz + 1, cz + 2]);
       // meurtrières
       for (const [x, z] of [[cx - 3, cz], [cx + 3, cz - 1], [cx, cz - 3], [cx - 1, cz + 3]]) w.set(x, F + 2, z, B.AIR);
       w.set(cx, F + 3, cz, k === floors - 1 ? B.AIR : w.get(cx, F + 3, cz));
@@ -624,25 +713,36 @@ G.Maps = (function () {
     build(w, rnd) {
       const n = G.makeNoise(404), m = G.makeNoise(414);
       const VX = 15, VZ = 15;
+      const q = G.makeNoise(424);
       terrain(w, (x, z) => {
         let h = 7 + (n(x * 0.05, z * 0.05) - 0.5) * 4;
         const dense = m(x * 0.09, z * 0.09);
         if (dense > 0.62) h += (dense - 0.62) * 18; // zones plus accidentées
-        const d = Math.hypot(x - VX, z - VZ);
-        h = Math.max(h, 7 + Math.max(0, 17 - d * 1.0));
+        // volcan anguleux et irrégulier
+        const d = Math.hypot(x - VX, z - VZ), ang = Math.atan2(z - VZ, x - VX);
+        const rough = 1 + 0.22 * Math.sin(3 * ang + 1.3) + 0.12 * Math.sin(7 * ang + 0.4);
+        const cone = 18 - d * rough + (q(x * 0.3, z * 0.3) - 0.5) * 4;
+        h = Math.max(h, 7 + Math.max(0, Math.round(cone / 1.5) * 1.5));
         return h;
       }, (x, y, z, h) => {
         const d = Math.hypot(x - VX, z - VZ);
-        if (y < h - 2) return B.BASALT;
-        if (d < 18) return (x * 7 + z * 13 + y) % 5 === 0 ? B.SCORIA_DARK : B.SCORIA;
-        return n(x * 0.25, z * 0.25) > 0.58 ? B.REDSAND : n(x * 0.4 + 9, z * 0.4) > 0.55 ? B.SCORIA_DARK : B.SCORIA;
+        if (y < h - 2) return (x + y * 3 + z) % 4 === 0 ? B.VOLCROCK : B.BASALT;
+        if (d < 20) { const v = q(x * 0.35 + y * 0.2, z * 0.35); return v > 0.66 ? B.SCORIA_DARK : v > 0.45 ? B.VOLCROCK : v > 0.3 ? B.BASALT : B.ASH; }
+        // plusieurs pierres voisines légèrement différentes pour casser la monotonie
+        const v = q(x * 0.12, z * 0.12), r = (x * 73856093 ^ z * 19349663) % 7;
+        if (n(x * 0.25, z * 0.25) > 0.6) return B.REDSAND;
+        const opts = v > 0.62 ? [B.SCORIA_DARK, B.BASALT2, B.SCORIA_DARK] : v > 0.4 ? [B.SCORIA, B.SCORIA3, B.SCORIA] : [B.BASALT2, B.ASH, B.SCORIA3];
+        return opts[Math.abs(r) % 3];
       });
       // cratère du volcan
       const peak = w.top(VX, VZ);
       ellipse(VX, VZ, 3.6, 3.6, (x, z) => { for (let y = peak - 3; y <= peak + 1; y++) w.set(x, y, z, B.AIR); w.set(x, peak - 3, z, B.LAVA); w.set(x, peak - 4, z, B.MAGMA); });
       ellipse(VX, VZ, 5.2, 5.2, (x, z, d) => { const t = w.top(x, z); if (d > 0.69 && rnd() < 0.5) w.set(x, t, z, B.MAGMA); });
-      // coulée de lave qui descend du volcan
-      for (let i = 0; i < 9; i++) { const x = VX + 3 + i, z = VZ + Math.round(i * 0.3); const t = w.top(x, z); if (t > 6) { w.set(x, t, z, B.MAGMA); } }
+      // coulée de lave qui descend du cratère jusqu'à la rivière
+      for (let s2 = 3; s2 <= 13; s2++) for (let o = -1; o <= 1; o++) {
+        const x = VX + s2, z = VZ + Math.round(Math.sin(s2 * 0.5)) + o; const t = w.top(x, z);
+        if (t > 5) { w.set(x, t, z, B.LAVA); w.set(x, t - 1, z, B.MAGMA); }
+      }
       // plateau construit à l'ouest, cour du donjon
       for (let z = 32; z <= 56; z++) for (let x = 3; x <= 31; x++) { for (let y = 1; y < w.H; y++) w.set(x, y, z, y < 7 ? B.BASALT : y === 7 ? ((x + z) % 7 === 0 ? B.SCORIA_DARK : B.DARKBRICK) : B.AIR); }
       flatten(w, 40, 40, 13, 7, B.DARKBRICK, B.BASALT);
@@ -652,25 +752,38 @@ G.Maps = (function () {
       const riverZ = (c, x) => Math.round(c === 14 ? 14 + Math.sin(x * 0.12) * 3 : 66 + Math.cos(x * 0.1) * 3);
       for (let x = 0; x < 80; x++) for (const c of [14, 66]) {
         if (c === 14 && x < 27) continue; // la rivière nord naît au pied du volcan
-        const zc = riverZ(c, x);
-        for (let dz = -1; dz <= 1; dz++) lavaCell(w, x, zc + dz);
-        for (const s of [-1, 1]) { bankCell(w, x, zc + s * 2, 4); bankCell(w, x, zc + s * 3, 5); bankCell(w, x, zc + s * 4, 6); }
+        const zc = riverZ(c, x), hw = c === 14 && x < 44 ? 2 : 1; // plus large juste après le volcan
+        for (let dz = -hw; dz <= hw; dz++) lavaCell(w, x, zc + dz);
+        for (const s of [-1, 1]) { bankCell(w, x, zc + s * (hw + 1), 4); bankCell(w, x, zc + s * (hw + 2), 5); bankCell(w, x, zc + s * (hw + 3), 6); }
       }
+      // bras de la rivière qui alimente le lac
+      for (let z = 14; z <= 32; z++) { const xc = 62 + Math.round(Math.sin(z * 0.3)); for (let dx = -1; dx <= 1; dx++) lavaCell(w, xc + dx, z); for (const s of [-1, 1]) { bankCell(w, xc + s * 2, z, 4); bankCell(w, xc + s * 3, z, 5); bankCell(w, xc + s * 4, z, 6); } }
       // lac de lave à l'est, rives douces
       ellipse(68, 40, 8, 10, (x, z) => lavaCell(w, x, z));
       ellipse(68, 40, 10.5, 12.5, (x, z, d) => { if (Math.hypot((x - 68) / 8, (z - 40) / 10) >= 1) bankCell(w, x, z, d < 0.85 ? 4 : d < 0.93 ? 5 : 6); });
       ellipse(68, 40, 2.5, 3, (x, z) => { for (let y = 5; y <= 7; y++) w.set(x, y, z, B.OBSIDIAN); });
       w.set(68, 8, 40, B.GLOW);
-      // ponts sur les rivières
+      // ponts surélevés avec rampes qui rejoignent le terrain
+      const bridge = (x, zc, half) => {
+        const nA = w.top(x, zc - half - 3), nB = w.top(x, zc + half + 3);
+        const D = G.clamp(Math.min(nA, nB), 7, 10);
+        for (let dz = -half - 3; dz <= half + 3; dz++) {
+          const z = zc + dz, a = Math.abs(dz), nat = w.top(x, z);
+          const h = a <= half ? D : Math.round(G.lerp(D, Math.max(5, Math.min(nat, 11)), (a - half) / 3));
+          const lava = w.get(x, 4, z) === B.LAVA && a <= half;
+          for (let y = lava ? h - 1 : 5; y <= h; y++) w.set(x, y, z, a <= half ? B.DARKBRICK : B.SCORIA_DARK);
+          for (let y = h + 1; y < w.H; y++) w.set(x, y, z, B.AIR);
+        }
+        return D;
+      };
       for (const bx of [14, 40, 66]) for (const c of [14, 66]) {
         if (c === 14 && bx < 27) continue;
-        for (let dx = -1; dx <= 1; dx++) {
-          const x = bx + dx, zc = riverZ(c, x);
-          for (let dz = -5; dz <= 5; dz++) { const z = zc + dz; for (let y = 7; y < w.H; y++) w.set(x, y, z, B.AIR); w.set(x, 6, z, B.DARKBRICK); w.set(x, 5, z, B.DARKBRICK); }
-          w.set(x, 7, zc - 5, B.AIR);
-        }
-        for (const dx of [-2, 2]) { const zc = riverZ(c, bx); for (let dz = -3; dz <= 3; dz++) w.set(bx + dx, 7, zc + dz, B.OBSIDIAN); }
+        let D = 7;
+        for (let dx = -1; dx <= 1; dx++) D = bridge(bx + dx, riverZ(c, bx + dx), c === 14 && bx < 44 ? 6 : 5);
+        for (const dx of [-2, 2]) { const zc = riverZ(c, bx); for (let dz = -4; dz <= 4; dz++) { w.set(bx + dx, D, zc + dz, B.DARKBRICK); w.set(bx + dx, D + 1, zc + dz, dz % 2 ? B.AIR : B.OBSIDIAN); } }
       }
+      // pont sur le bras du lac
+      for (let dz = -1; dz <= 1; dz++) { const z = 22 + dz; const xc = 62 + Math.round(Math.sin(z * 0.3)); for (let x = xc - 7; x <= xc + 7; x++) { const a = Math.abs(x - xc), nat = w.top(x, z), h = a <= 5 ? 8 : Math.round(G.lerp(8, Math.max(5, Math.min(nat, 11)), (a - 5) / 2)); for (let y = w.get(x, 4, z) === B.LAVA && a <= 5 ? h - 1 : 5; y <= h; y++) w.set(x, y, z, a <= 5 ? B.DARKBRICK : B.SCORIA_DARK); for (let y = h + 1; y < w.H; y++) w.set(x, y, z, B.AIR); } }
       // pont vers l'îlot du lac
       for (let x = 58; x <= 66; x++) for (let dz = 0; dz <= 1; dz++) { w.set(x, 6, 40 + dz, B.DARKBRICK); w.set(x, 5, 40 + dz, B.DARKBRICK); for (let y = 7; y < 12; y++) w.set(x, y, 40 + dz, B.AIR); }
       // donjon
@@ -679,6 +792,14 @@ G.Maps = (function () {
       for (let d = -1; d <= 1; d++) for (let y = 8; y <= 10; y++) { w.set(40 + d, y, k0, B.AIR); w.set(40 + d, y, k1, B.AIR); w.set(k0, y, 40 + d, B.AIR); w.set(k1, y, 40 + d, B.AIR); }
       for (const [tx, tz] of [[k0, k0], [k1, k0], [k0, k1], [k1, k1]]) { w.fill(tx, 8, tz, tx, 14, tz, B.OBSIDIAN); w.set(tx, 15, tz, B.MAGMA); }
       w.fill(39, 8, 39, 41, 8, 41, B.OBSIDIAN); w.set(40, 9, 40, B.GLOW);
+      // recoins du donjon : murets bas et barils autour des stations
+      const muret = (x0, z0, x1, z1) => { for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) for (let z = Math.min(z0, z1); z <= Math.max(z0, z1); z++) w.set(x, 8, z, B.DARKBRICK); };
+      muret(42, 43, 42, 46); muret(42, 42, 46, 42);          // coin sud-est (caisse)
+      muret(36, 37, 38, 37); muret(38, 34, 38, 36);          // coin nord-ouest
+      muret(44, 36, 46, 36);                                  // coin nord-est
+      muret(36, 43, 39, 43);                                  // coin sud-ouest
+      for (const [x, z] of [[46, 41], [46, 40], [41, 34], [37, 46], [39, 46], [36, 38], [43, 34], [44, 46]]) { w.set(x, 8, z, B.BARREL); if ((x + z) % 3 === 0) w.set(x, 9, z, B.BARREL); }
+      for (const [x, z] of [[24, 38], [27, 47], [19, 45], [8, 42], [29, 36]]) { w.set(x, 8, z, B.BARREL); w.set(x + 1, 8, z, B.CRATE); }
       // balcon intérieur du donjon + escalier
       w.fill(34, 11, 36, 35, 11, 43, B.DARKBRICK);
       stairs(w, 34, 46, 7, 4, 0, -1, B.DARKBRICK, 2);
@@ -724,16 +845,16 @@ G.Maps = (function () {
     },
     player: [40, 37],
     stations: [
-      { type: 'box', x: 40, z: 43 },
-      { type: 'wall', weapon: 'smg', x: 37, z: 36 },
+      { type: 'box', x: 44, z: 44 },
+      { type: 'wall', weapon: 'smg', x: 36, z: 35 },
       { type: 'wall', weapon: 'shotgun', x: 45, z: 37 },
-      { type: 'wall', weapon: 'rifle', x: 38, z: 45 },
+      { type: 'wall', weapon: 'rifle', x: 37, z: 45 },
       { type: 'wall', weapon: 'sniper', x: 12, z: 42, top: true },
-      { type: 'perk', perk: 'cuirasse', x: 29, z: 33, wave: 1 },
-      { type: 'perk', perk: 'souffle', x: 51, z: 33, wave: 2 },
-      { type: 'perk', perk: 'rafale', x: 29, z: 47, wave: 3 },
-      { type: 'perk', perk: 'mainleste', x: 51, z: 47, wave: 5 },
-      { type: 'perk', perk: 'foulee', x: 40, z: 29, wave: 4 },
+      { type: 'perk', perk: 'cuirasse', x: 21, z: 34, wave: 1 },
+      { type: 'perk', perk: 'souffle', x: 24, z: 34, wave: 2 },
+      { type: 'perk', perk: 'rafale', x: 22, z: 52, wave: 3 },
+      { type: 'perk', perk: 'mainleste', x: 26, z: 52, wave: 5 },
+      { type: 'perk', perk: 'foulee', x: 5, z: 47, wave: 4 },
       { type: 'perk', perk: 'bandouliere', x: 68, z: 42, wave: 7 },
       { type: 'forge', x: 43, z: 40, wave: 8 },
       { type: 'bench', x: 45, z: 35 },
@@ -742,13 +863,12 @@ G.Maps = (function () {
   });
 
   // ---------- 5. Ville ----------
-  const ROADS = [22, 48, 74];
+  const ROADS = [22, 48, 74, 100];
   list.push({
-    id: 'ville', name: 'Ville Fantôme', desc: 'Grande ville : immeubles visitables jusqu\'au toit, magasins, parc et égouts sous les rues.', stars: 3, rpMult: 1.35, size: 96, height: 48,
-    sky: [0x6f8cb0, 0xc8d2dc], fog: [0xb0bcc8, 26, 100], hemi: [0xdfe8f0, 0x4a4a50, 0.75], sun: [0xfff4e0, 0.85], weather: null,
+    id: 'ville', name: 'Ville Fantôme', desc: 'Ville dévastée : immeubles visitables, quartier serré de ruelles, cratère, égouts sous les rues.', stars: 3, rpMult: 1.35, size: 128, height: 48,
+    sky: [0x6a7a90, 0xb8bec4], fog: [0xa8aeb4, 24, 110], hemi: [0xd6dce2, 0x4a4a50, 0.72], sun: [0xf6eee0, 0.8], weather: null,
     build(w, rnd) {
-      const g = 12, S = 96;
-      // sol
+      const g = 12, S = 128;
       for (let z = 0; z < S; z++) for (let x = 0; x < S; x++) {
         w.set(x, 0, z, B.BEDROCK);
         for (let y = 1; y < g; y++) w.set(x, y, z, B.STONE);
@@ -759,30 +879,18 @@ G.Maps = (function () {
       for (let z = 0; z < S; z++) for (let x = 0; x < S; x++) {
         if (onRoad(x) || onRoad(z)) {
           const line = (ROADS.includes(x) && !onRoad(z)) || (ROADS.includes(z) && !onRoad(x));
-          w.set(x, g, z, line ? B.ASPHALT_LINE : B.ASPHALT);
+          w.set(x, g, z, line ? B.ASPHALT_LINE : rnd() < 0.08 ? B.ASPHALT_CRACK : B.ASPHALT);
         } else if (onWalk(x) || onWalk(z)) w.set(x, g, z, B.SIDEWALK);
       }
       // égouts : coque puis creusement
       const tunnel = (c, axis, fn) => { for (let a = 0; a < S; a++) for (let o = -2; o <= 2; o++) { const x = axis === 'z' ? c + o : a, z = axis === 'z' ? a : c + o; fn(x, z, o, a); } };
-      for (const c of ROADS) for (const axis of ['x', 'z']) tunnel(c, axis, (x, z, o) => { for (let y = 5; y <= 10; y++) w.set(x, y, z, B.SEWER); });
+      for (const c of ROADS) for (const axis of ['x', 'z']) tunnel(c, axis, (x, z) => { for (let y = 5; y <= 10; y++) w.set(x, y, z, B.SEWER); });
       for (const c of ROADS) for (const axis of ['x', 'z']) tunnel(c, axis, (x, z, o, a) => {
         if (Math.abs(o) > 1) return;
         for (let y = 7; y <= 9; y++) w.set(x, y, z, B.AIR);
-        if (o === 0) { w.set(x, 6, z, B.WATER); } else w.set(x, 6, z, B.SEWER);
+        if (o === 0) w.set(x, 6, z, B.WATER); else w.set(x, 6, z, B.SEWER);
         if (a % 8 === 0 && o === 0) w.set(x, 10, z, B.GLOW);
       });
-      // bouches d'égout avec escaliers
-      const manhole = (c, axis, a0, dir) => {
-        for (let k = 1; k <= 6; k++) {
-          const a = a0 + dir * k, lane = c + 1;
-          const x = axis === 'z' ? lane : a, z = axis === 'z' ? a : lane;
-          for (let y = 13 - k; y <= g; y++) w.set(x, y, z, B.AIR);
-          w.set(x, 12 - k, z, B.SEWER);
-        }
-        const x = axis === 'z' ? c + 1 : a0, z = axis === 'z' ? a0 : c + 1;
-        w.set(x, g, z, B.GRATE);
-      };
-      // égouts en labyrinthe : galeries secondaires, impasses et salles
       const carve = (x0, z0, x1, z1) => {
         const alongX = z0 === z1;
         const len = alongX ? Math.abs(x1 - x0) : Math.abs(z1 - z0), sx = Math.sign(x1 - x0), sz = Math.sign(z1 - z0);
@@ -799,78 +907,135 @@ G.Maps = (function () {
         for (let x = cx - 3; x <= cx + 3; x++) for (let z = cz - 3; z <= cz + 3; z++) for (let y = 5; y <= 11; y++) { const b = w.get(x, y, z); if (b !== B.AIR && b !== B.WATER) w.set(x, y, z, B.SEWER); }
         for (let x = cx - 2; x <= cx + 2; x++) for (let z = cz - 2; z <= cz + 2; z++) { for (let y = 7; y <= 10; y++) w.set(x, y, z, B.AIR); w.set(x, 6, z, B.MOSSY); }
         w.set(cx, 6, cz, B.WATER); w.set(cx, 5, cz, B.SEWER); w.set(cx, 11, cz, B.GLOW);
-        w.set(cx - 2, 7, cz - 2, B.CRATE); w.set(cx + 2, 7, cz + 2, B.CRATE); w.set(cx + 2, 8, cz + 2, B.CRATE);
+        w.set(cx - 2, 7, cz - 2, B.CRATE); w.set(cx + 2, 7, cz + 2, B.BARREL); w.set(cx + 2, 8, cz + 2, B.CRATE);
       };
       carve(22, 35, 48, 35); carve(61, 22, 61, 48); carve(35, 48, 35, 74); carve(48, 87, 74, 87);
-      carve(87, 14, 87, 48); carve(22, 9, 35, 9); carve(9, 61, 9, 74);
-      room(87, 14); room(35, 9); room(9, 61); room(61, 35); room(35, 61);
-      // les égouts sont fermés en bord de carte
+      carve(87, 14, 87, 48); carve(22, 9, 35, 9); carve(9, 61, 9, 74); carve(74, 113, 100, 113); carve(113, 74, 113, 100); carve(87, 100, 87, 120);
+      room(87, 14); room(35, 9); room(9, 61); room(61, 35); room(35, 61); room(87, 120); room(113, 87);
       for (const c of ROADS) for (const a of [0, 1, S - 2, S - 1]) for (let o = -2; o <= 2; o++) for (let y = 5; y <= 10; y++) { w.set(c + o, y, a, B.SEWER); w.set(a, y, c + o, B.SEWER); }
       for (const c of ROADS) for (const a of [2, S - 3]) { w.set(c, 8, a, B.GRATE); w.set(a, 8, c, B.GRATE); }
-      manhole(48, 'z', 57, 1); manhole(48, 'x', 39, -1); manhole(22, 'z', 30, 1); manhole(74, 'z', 66, -1); manhole(22, 'x', 60, 1); manhole(74, 'x', 30, -1);
+      // accès aux égouts depuis le trottoir : escalier + couloir vers la galerie
+      const walkAccess = (c, axis, a0, dir) => {
+        const lane = c + 4;
+        for (let k = 1; k <= 6; k++) {
+          const a = a0 + dir * k, x = axis === 'z' ? lane : a, z = axis === 'z' ? a : lane;
+          for (let y = 13 - k; y <= g + 2; y++) w.set(x, y, z, B.AIR);
+          w.setStair(x, 12 - k, z, B.STAIR_STONE, axis === 'z' ? (dir > 0 ? 3 : 2) : (dir > 0 ? 1 : 0));
+          for (const o of [-1, 1]) { const xx = axis === 'z' ? x + o : x, zz = axis === 'z' ? z : z + o; for (let y = 12 - k; y <= g; y++) if (!w.get(xx, y, zz)) w.set(xx, y, zz, B.SEWER); }
+        }
+        const ae = a0 + dir * 6;
+        for (let l = c + 1; l <= c + 4; l++) { const x = axis === 'z' ? l : ae, z = axis === 'z' ? ae : l; w.set(x, 6, z, B.SEWER); for (let y = 7; y <= 9; y++) w.set(x, y, z, B.AIR); }
+        // garde-corps autour de la trémie
+        for (let k = 0; k <= 6; k++) { const a = a0 + dir * k, x = axis === 'z' ? lane + 1 : a, z = axis === 'z' ? a : lane + 1; if (k > 0) w.details.push({ box: true, x0: x + 0.45, y0: g + 1, z0: z, x1: x + 0.55, y1: g + 1.9, z1: z + 1, tile: 'metal' }); }
+      };
+      walkAccess(48, 'z', 56, 1); walkAccess(48, 'x', 40, -1); walkAccess(22, 'z', 30, 1); walkAccess(74, 'z', 66, -1); walkAccess(22, 'x', 60, 1); walkAccess(74, 'x', 30, -1); walkAccess(100, 'z', 60, 1); walkAccess(100, 'x', 84, -1);
       // îlots
-      const blocks = [[0, 16], [28, 42], [54, 68], [80, 95]];
+      const blocks = [[0, 16], [28, 42], [54, 68], [80, 94], [106, 127]];
       const plan = [
         ['tower6', 'apart4', 'shopPark', 'apart3'],
         ['parking', 'tower7', 'apart5', 'tower6'],
         ['apart4', 'shopPark', 'park', 'shop'],
         ['park', 'tower5', 'apart3', 'tower6'],
       ];
-      for (let bz = 0; bz < 4; bz++) for (let bx = 0; bx < 4; bx++) {
+      const damaged = new Set(['0,0', '3,1', '1,3', '3,3', '2,0']);
+      for (let bz = 0; bz < 5; bz++) for (let bx = 0; bx < 5; bx++) {
         const [xa, xb] = blocks[bx], [za, zb] = blocks[bz];
         const x0 = xa + 1, x1 = xb - 1, z0 = za + 1, z1 = zb - 1;
-        const type = plan[bz][bx];
-        if (type.startsWith('tower')) building(w, x0, z0, x1, z1, Number(type.slice(5)), { g, wall: B.CONCRETE_DARK, floor: B.CONCRETE, glassFull: true }, rnd);
-        else if (type.startsWith('apart')) building(w, x0 + 1, z0 + 1, x1 - 1, z1 - 1, Number(type.slice(5)), { g, wall: B.BRICK, floor: B.PLANKS, stair: B.PLANKS }, rnd);
+        if (bx === 4 || bz === 4) {
+          // quartier serré façon New York / Paris : immeubles étroits, ruelles, graffitis, escaliers de secours
+          for (let z = za; z <= zb; z++) for (let x = xa; x <= xb; x++) w.set(x, g, z, rnd() < 0.15 ? B.ASPHALT_CRACK : B.COBBLE);
+          const xs = bx === 4 ? [[107, 115], [118, 126]] : [[x0, x1]];
+          const zs = bz === 4 ? [[107, 115], [118, 126]] : [[z0, z1]];
+          for (const [ax, bxx] of xs) for (const [az, bzz] of zs) {
+            const nf = 4 + Math.floor(rnd() * 4);
+            building(w, ax, az, bxx, bzz, nf, { g, wall: rnd() < 0.5 ? B.BRICK : B.STONEBRICK, floor: B.PLANKS, stair: B.PLANKS, graffiti: true, damaged: rnd() < 0.4, fireEscape: bx === 4 ? (ax === 107 ? 'e' : null) : (rnd() < 0.5 ? 'e' : 'w') }, rnd);
+          }
+          // poubelles et caisses dans les ruelles
+          for (let i = 0; i < 6; i++) { const x = bx === 4 ? 116 + (i % 2) : x0 + Math.floor(rnd() * (x1 - x0)), z = bz === 4 ? 116 + (i % 2) : z0 + Math.floor(rnd() * (z1 - z0)); if (!w.get(x, g + 1, z) && x > 0 && z > 0 && x < S - 1 && z < S - 1) w.set(x, g + 1, z, G.pick([B.BIN, B.BIN, B.CRATE, B.BARREL])); }
+          continue;
+        }
+        const type = plan[bz][bx], dmg = damaged.has(bx + ',' + bz);
+        if (type.startsWith('tower')) building(w, x0, z0, x1, z1, Number(type.slice(5)), { g, wall: B.CONCRETE_DARK, floor: B.CONCRETE, glassFull: true, damaged: dmg }, rnd);
+        else if (type.startsWith('apart')) building(w, x0 + 1, z0 + 1, x1 - 1, z1 - 1, Number(type.slice(5)), { g, wall: B.BRICK, floor: B.PLANKS, stair: B.PLANKS, damaged: dmg }, rnd);
         else if (type === 'shop') { shop(w, x0 + 2, z0 + 2, x1 - 2, z1 - 6, g, B.WHITEWALL); }
         else if (type === 'shopPark') {
           shop(w, x0 + 1, z0 + 1, x1 - 1, z0 + 6, g, B.WHITEWALL);
           for (let z = z0 + 9; z <= z1; z++) for (let x = x0; x <= x1; x++) w.set(x, g, z, (x - x0) % 4 === 0 ? B.ASPHALT_LINE : B.ASPHALT);
-          for (let x = x0 + 1; x < x1 - 2; x += 4) if (rnd() < 0.7) car(w, x, z0 + 10, g, 'z', rnd);
+          for (let x = x0 + 1; x < x1 - 2; x += 4) if (rnd() < 0.7) car(w, x, z0 + 10, g, 'z');
         } else if (type === 'parking') {
           for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) w.set(x, g, z, (z - z0) % 5 === 0 ? B.ASPHALT_LINE : B.ASPHALT);
-          for (let z = z0 + 1; z < z1 - 2; z += 5) for (let x = x0 + 1; x < x1 - 3; x += 6) if (rnd() < 0.7) car(w, x, z, g, 'x', rnd);
+          for (let z = z0 + 1; z < z1 - 2; z += 5) for (let x = x0 + 1; x < x1 - 3; x += 6) if (rnd() < 0.7) car(w, x, z, g, 'x');
         } else if (type === 'park') {
           for (let z = za; z <= zb; z++) for (let x = xa; x <= xb; x++) if (!onRoad(x) && !onRoad(z) && !onWalk(x) && !onWalk(z)) w.set(x, g, z, B.GRASS);
           const cx = Math.floor((xa + xb) / 2), cz = Math.floor((za + zb) / 2);
           lake(w, cx + 2, cz + 2, 3.5, 2.5, g, B.SAND);
-          for (let i = 0; i < 9; i++) { const x = x0 + 1 + Math.floor(rnd() * (x1 - x0 - 2)), z = z0 + 1 + Math.floor(rnd() * (z1 - z0 - 2)); if (Math.hypot(x - cx - 2, z - cz - 2) < 6) continue; if (canTree(w, x, z, g, B.GRASS)) tree(w, x, g, z, rnd); }
+          for (let i = 0; i < 9; i++) { const x = x0 + 1 + Math.floor(rnd() * (x1 - x0 - 2)), z = z0 + 1 + Math.floor(rnd() * (z1 - z0 - 2)); if (Math.hypot(x - cx - 2, z - cz - 2) < 6) continue; if (canTree(w, x, z, g, B.GRASS)) (rnd() < 0.5 ? tree : deadTree)(w, x, g, z, rnd); }
           for (let x = x0 + 1; x < x1; x += 4) w.set(x, g + 1, z0 + 1, B.PLANKS);
         }
       }
+      // routes cassées : nids-de-poule et gravats
+      for (let i = 0; i < 26; i++) {
+        const c = G.pick(ROADS), a = 3 + Math.floor(rnd() * (S - 6)), o = Math.floor(rnd() * 7) - 3;
+        const x = rnd() < 0.5 ? c + o : a, z = x === c + o ? a : c + o;
+        if (Math.abs(x - 48) < 4 && Math.abs(z - 48) < 4) continue;
+        for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [-1, 0]]) if (rnd() < 0.8 && w.get(x + dx, g, z + dz) !== B.GRATE) w.set(x + dx, g, z + dz, rnd() < 0.5 ? B.GRAVEL : B.RUBBLE);
+        if (rnd() < 0.4) w.set(x, g + 1, z, B.RUBBLE);
+      }
+      // cratère de bombe qui ouvre sur les égouts
+      const crater = (cx, cz, r) => {
+        for (let x = cx - r; x <= cx + r; x++) for (let z = cz - r; z <= cz + r; z++) {
+          const d = Math.hypot(x - cx, z - cz); if (d > r) continue;
+          const floor = Math.max(6, g - Math.round((1 - d / r) * 7));
+          for (let y = floor + 1; y <= g + 3; y++) w.set(x, y, z, B.AIR);
+          if (floor > 6 || w.get(x, 6, z) !== B.WATER) w.set(x, floor, z, d > r - 1.5 ? B.ASPHALT_CRACK : rnd() < 0.5 ? B.RUBBLE : B.GRAVEL);
+        }
+        for (let i = 0; i < 14; i++) { const a = rnd() * Math.PI * 2, x = Math.round(cx + Math.cos(a) * (r + 1)), z = Math.round(cz + Math.sin(a) * (r + 1)); if (!w.get(x, g + 1, z)) w.set(x, g + 1, z, B.RUBBLE); }
+      };
+      crater(74, 36, 7);
+      car(w, 69, 31, g, 'x');
+      // voitures abandonnées sur les routes
+      for (const c of ROADS) for (let a = 4; a < S - 6; a += 10) {
+        if (onRoad(a) || onRoad(a + 3) || rnd() < 0.45) continue;
+        if (Math.abs(c - 74) < 1 && Math.abs(a - 36) < 9) continue;
+        car(w, c - 3, a, g, 'z');
+        if (rnd() < 0.4) car(w, a, c + 2, g, 'x');
+      }
+      // vrais lampadaires : mât, bras et lanterne
+      for (const c of ROADS) for (let a = 6; a < S - 2; a += 12) {
+        if (onRoad(a)) continue;
+        for (const [x, z, ax, az] of [[c - 4, a, 1, 0], [a, c + 4, 0, -1]]) {
+          if (w.get(x, g + 1, z) || w.get(x, g, z) !== B.SIDEWALK) continue;
+          w.details.push({ box: true, x0: x + 0.42, y0: g + 1, z0: z + 0.42, x1: x + 0.58, y1: g + 4.9, z1: z + 0.58, tile: 'concrete_dark' });
+          w.details.push({ box: true, x0: x + 0.4 + Math.min(0, ax) * 1.2, y0: g + 4.75, z0: z + 0.4 + Math.min(0, az) * 1.2, x1: x + 0.6 + Math.max(0, ax) * 1.2, y1: g + 4.9, z1: z + 0.6 + Math.max(0, az) * 1.2, tile: 'metal' });
+          const lx = x + 0.5 + ax * 1.25, lz = z + 0.5 + az * 1.25;
+          w.details.push({ box: true, x0: lx - 0.22, y0: g + 4.45, z0: lz - 0.22, x1: lx + 0.22, y1: g + 4.75, z1: lz + 0.22, tile: 'glowstone', bright: true });
+          w.details.push({ box: true, x0: x + 0.35, y0: g + 1, z0: z + 0.35, x1: x + 0.65, y1: g + 1.3, z1: z + 0.65, tile: 'concrete_dark' });
+        }
+      }
+      // poubelles sur les trottoirs
+      for (let i = 0; i < 40; i++) { const c = G.pick(ROADS), a = 3 + Math.floor(rnd() * (S - 6)), side = rnd() < 0.5 ? -5 : 5; const x = rnd() < 0.5 ? c + side : a, z = x === c + side ? a : c + side; if (w.get(x, g, z) === B.SIDEWALK && !w.get(x, g + 1, z)) w.set(x, g + 1, z, rnd() < 0.85 ? B.BIN : B.RUBBLE); }
       // mur d'enceinte surmonté de barbelés
       for (let i = 0; i < S; i++) for (const [x, z] of [[i, 0], [i, S - 1], [0, i], [S - 1, i]]) {
         for (let y = g + 1; y <= g + 4; y++) w.set(x, y, z, i % 6 === 0 ? B.CONCRETE_DARK : B.WALLPANEL);
         w.set(x, g + 5, z, i % 6 === 0 ? B.CONCRETE_DARK : B.BARBED);
       }
-      // voitures abandonnées sur les routes
-      for (const c of ROADS) for (let a = 4; a < S - 6; a += 9) {
-        if (onRoad(a) || onRoad(a + 3) || rnd() < 0.4) continue;
-        car(w, c - 3, a, g, 'z', rnd);
-        if (rnd() < 0.5) car(w, a, c + 2, g, 'x', rnd);
-      }
-      // lampadaires
-      for (const c of ROADS) for (let a = 6; a < S; a += 12) {
-        if (onRoad(a)) continue;
-        for (const [x, z] of [[c - 4, a], [a, c + 4]]) { if (w.get(x, g + 1, z)) continue; w.set(x, g + 1, z, B.METAL); w.set(x, g + 2, z, B.METAL); w.set(x, g + 3, z, B.GLOW); }
-      }
-      // barrières de chantier et sacs de sable sur les routes et trottoirs
-      covers(w, rnd, 26, { avoid: [[48, 48, 4]], surfaces: [B.ASPHALT, B.ASPHALT_LINE, B.SIDEWALK, B.CONCRETE], kinds: ['barrier', 'sand', 'barrier', 'crates'] });
-      pebbles(w, rnd, [B.ASPHALT, B.SIDEWALK, B.CONCRETE, B.GRASS], 180, 'concrete_dark');
-      decorate(w, rnd, B.GRASS, [[B.TALLGRASS, 0.15], [B.FLOWER_R, 0.02], [B.FLOWER_Y, 0.02]]);
+      covers(w, rnd, 34, { avoid: [[48, 48, 4], [74, 36, 8]], surfaces: [B.ASPHALT, B.ASPHALT_LINE, B.SIDEWALK, B.CONCRETE, B.COBBLE], kinds: ['barrier', 'sand', 'barrier', 'crates'] });
+      pebbles(w, rnd, [B.ASPHALT, B.SIDEWALK, B.CONCRETE, B.GRASS, B.COBBLE], 320, 'concrete_dark');
+      decorate(w, rnd, B.GRASS, [[B.TALLGRASS, 0.2], [B.DEADBUSH, 0.04]]);
     },
     player: [48, 48],
+    // stations dans les bâtiments autour du point d'apparition
     stations: [
       { type: 'box', x: 58, z: 58 },
-      { type: 'wall', weapon: 'smg', x: 43, z: 36 },
-      { type: 'wall', weapon: 'shotgun', x: 53, z: 36 },
-      { type: 'wall', weapon: 'rifle', x: 36, z: 53 },
+      { type: 'wall', weapon: 'smg', x: 40, z: 40 },
+      { type: 'wall', weapon: 'shotgun', x: 65, z: 39 },
+      { type: 'wall', weapon: 'rifle', x: 39, z: 57 },
       { type: 'wall', weapon: 'sniper', x: 35, z: 35, top: true },
-      { type: 'perk', perk: 'cuirasse', x: 53, z: 60, wave: 1 },
-      { type: 'perk', perk: 'souffle', x: 43, z: 60, wave: 2 },
-      { type: 'perk', perk: 'rafale', x: 60, z: 43, wave: 3 },
+      { type: 'perk', perk: 'cuirasse', x: 40, z: 30, wave: 1 },
+      { type: 'perk', perk: 'souffle', x: 30, z: 40, wave: 2 },
+      { type: 'perk', perk: 'rafale', x: 65, z: 31, wave: 3 },
       { type: 'perk', perk: 'mainleste', x: 66, z: 57, wave: 5 },
-      { type: 'perk', perk: 'foulee', x: 36, z: 43, wave: 4 },
+      { type: 'perk', perk: 'foulee', x: 31, z: 57, wave: 4 },
       { type: 'perk', perk: 'bandouliere', x: 34, z: 38, wave: 7, top: true },
       { type: 'forge', x: 49, z: 30, wave: 8 },
       { type: 'bench', x: 34, z: 57 },
@@ -880,9 +1045,9 @@ G.Maps = (function () {
       const s = [];
       for (const c of ROADS) {
         s.push([c - 3, 2], [c - 3, S - 3], [2, c - 3], [S - 3, c - 3]);
-        s.push([c + 1, 3], [c + 1, S - 4], [3, c + 1], [S - 4, c + 1]); // sorties d'égout (fermées au bord)
+        s.push([c + 1, 3], [c + 1, S - 4], [3, c + 1], [S - 4, c + 1]);
       }
-      for (const [x, z] of [[8, 8], [88, 8], [8, 88], [88, 88], [8, 48], [88, 48], [48, 8], [48, 88], [87, 14], [35, 9], [9, 61]]) s.push([x, z]);
+      for (const [x, z] of [[8, 8], [116, 8], [8, 116], [116, 116], [8, 48], [116, 48], [48, 8], [48, 116], [87, 14], [35, 9], [9, 61], [87, 120], [113, 87]]) s.push([x, z]);
       return s;
     },
   });

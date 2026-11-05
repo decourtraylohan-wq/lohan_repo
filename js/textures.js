@@ -196,6 +196,31 @@ G.Tex = (function () {
     tile('barbed', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.clear(x, y); for (let x = 0; x < 16; x++) { const y1 = Math.round(8 + Math.sin(x * 0.8) * 5), y2 = Math.round(8 - Math.sin(x * 0.8) * 5); t.px(x, y1, 0x8a8c90); t.px(x, y2, 0x6a6c70); if (x % 4 === 0) { t.px(x, y1 - 1, 0xa0a2a6); t.px(x, y1 + 1, 0xa0a2a6); } } });
     tile('wallpanel', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, (x % 8 === 0) ? 0x7a7a74 : 0x9a9a92, Math.floor((t.rnd() - 0.5) * 12) + (y > 12 ? -14 : 0)); });
 
+
+    // --- variantes de pierre volcanique, ville abîmée ---
+    tile('volcrock', voronoi([0x2a2628, 0x343032, 0x221f22, 0x3c3638], 0x121012, 9, 0.08));
+    tile('basalt2', voronoi([0x55504c, 0x4a4542, 0x605a55], 0x2a2624, 6, 0.12));
+    tile('ash', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, t.rnd() < 0.15 ? 0x3a3434 : 0x5a5452, Math.floor((t.rnd() - 0.5) * 22)); });
+    tile('scoria3', voronoi([0x7a3a2c, 0x8a4632, 0x6a3428, 0x9a5038], 0x2a1814, 10, 0.25));
+    tile('asphalt_crack', (t) => { speckle(0x3a3b3e, 14)(t); let x = 2, y = 0; for (let i = 0; i < 22; i++) { t.px(G.clamp(x, 0, 15), G.clamp(y, 0, 15), 0x1a1a1c); y++; if (t.rnd() < 0.5) x += t.rnd() < 0.5 ? 1 : -1; if (y > 15) { y = Math.floor(t.rnd() * 6); x = 8 + Math.floor(t.rnd() * 6); } } });
+    tile('barrel_side', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const band = y === 2 || y === 13 || y === 7; t.px(x, y, band ? 0x3a2a20 : (x === 0 || x === 15 ? 0x6a2a1a : 0x9a3a22), Math.floor((t.rnd() - 0.5) * 20)); } for (let i = 0; i < 6; i++) t.px(Math.floor(t.rnd() * 16), Math.floor(t.rnd() * 16), 0x5a3020); });
+    tile('barrel_top', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const r = Math.hypot(x - 7.5, y - 7.5); t.px(x, y, r > 7 ? 0x3a2a20 : r < 2 ? 0x2a2420 : 0x8a3420, Math.floor((t.rnd() - 0.5) * 14)); } });
+    tile('locker', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const e = x % 8 === 0 || y === 0 || y === 15; const vent = (y === 3 || y === 5) && x % 8 > 2 && x % 8 < 6; t.px(x, y, e ? 0x3a4a5a : vent ? 0x2a3440 : 0x5a7088, Math.floor((t.rnd() - 0.5) * 8)); } t.px(6, 9, 0xc0c0c0); t.px(14, 9, 0xc0c0c0); });
+    tile('bin_side', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, y < 3 ? 0x1e3a28 : (x % 4 === 0 ? 0x24402c : 0x2e5236), Math.floor((t.rnd() - 0.5) * 14)); });
+    tile('bin_top', speckle(0x1e3a28, 12));
+    const graffiti = (cols) => (t) => {
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+        const row = Math.floor(y / 4), off = row % 2 ? 4 : 0;
+        const mortar = y % 4 === 3 || (x + off) % 8 === 7;
+        t.px(x, y, mortar ? 0xb5aca0 : 0x9c4a3a, mortar ? 0 : Math.floor((t.rnd() - 0.5) * 24));
+      }
+      for (let k = 0; k < 3; k++) { let x = 1 + Math.floor(t.rnd() * 12), y = 3 + Math.floor(t.rnd() * 10); const c = cols[k % cols.length]; for (let i = 0; i < 14; i++) { t.px(G.clamp(x, 0, 15), G.clamp(y, 0, 15), c); t.px(G.clamp(x + 1, 0, 15), G.clamp(y, 0, 15), c); x += t.rnd() < 0.7 ? 1 : 0; y += Math.round((t.rnd() - 0.5) * 3); if (x > 14) break; } }
+    };
+    tile('graffiti1', graffiti([0x30c0ff, 0xff40a0, 0xffffff]));
+    tile('graffiti2', graffiti([0xffd020, 0x40e060, 0x101010]));
+    tile('rubble', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, G.pick([0x7a7a74, 0x6a6662, 0x8c4a3a, 0x9a9890, 0x5a5652]), Math.floor((t.rnd() - 0.5) * 14)); });
+    tile('cabinet', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const e = x === 0 || x === 15 || y % 5 === 0; t.px(x, y, e ? 0x4a4a4e : 0x7a7a80, Math.floor((t.rnd() - 0.5) * 8)); } for (let y = 2; y < 16; y += 5) { t.px(7, y, 0xd0d0d0); t.px(8, y, 0xd0d0d0); } });
+
     atlasTexture = new THREE.CanvasTexture(atlasCanvas);
     atlasTexture.magFilter = THREE.NearestFilter;
     atlasTexture.minFilter = THREE.NearestFilter;

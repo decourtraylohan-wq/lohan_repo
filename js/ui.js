@@ -311,6 +311,7 @@ G.UI = (function () {
     $('msg').style.opacity = 1;
     clearTimeout(msgTimer); msgTimer = setTimeout(() => { $('msg').style.opacity = 0; }, dur * 1000);
   }
+  function underwater(on) { $('water').style.opacity = on ? 1 : 0; }
   function showCraft(on) {
     const c = $('craft');
     if (!on) { c.classList.add('hidden'); return; }
@@ -358,5 +359,5 @@ G.UI = (function () {
     go('main');
   }
 
-  return { showCraft, init, go, updateHUD, hitmarker, pointsPopup, hurt, damageDir, flash, message, showHUD, showPause, showScoreboard, showGameOver };
+  return { underwater, showCraft, init, go, updateHUD, hitmarker, pointsPopup, hurt, damageDir, flash, message, showHUD, showPause, showScoreboard, showGameOver };
 })();

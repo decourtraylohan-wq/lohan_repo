@@ -276,7 +276,8 @@ G.Game = class {
     this.power = { insta: 0, double: 0, fury: 0 };
     this.stats = { kills: 0, headshots: 0, shots: 0, hits: 0, dmgDealt: 0, dmgTaken: 0, points: 0, bosses: 0, specials: 0, revives: 0 };
     this.waveStats = []; this.curWave = null;
-    this.phase = 'intermission'; this.phaseT = 5;
+    this.phase = 'intermission'; this.phaseT = 10;
+    this.setupBorder();
     this.boss = null; this.dropsThisWave = 0;
     this.flowT = 0; this.paused = false;
     this.world.computeFlow(this.player.pos.x, this.player.pos.y, this.player.pos.z);
@@ -435,7 +436,12 @@ G.Game = class {
 
     // champ de flux
     this.flowT -= dt;
-    if (this.flowT <= 0) { this.flowT = 0.25; this.world.computeFlow(pl.pos.x, pl.pos.y, pl.pos.z); }
+    if (this.flowT <= 0) {
+      this.flowT = 0.25; this.world.computeFlow(pl.pos.x, pl.pos.y, pl.pos.z);
+      if (this.enemies.some((e) => e.big && !e.dead)) this.world.computeFlowBig(pl.pos.x, pl.pos.y, pl.pos.z);
+    }
+    this.updateBorder(dt);
+    this.updateWater(dt);
     G.Audio.setListener(pl.eye.x, pl.eye.y, pl.eye.z, pl.yaw);
     if (this.warpT > 0) this.warpT -= dt;
     this.beatT = (this.beatT || 0) - dt;
@@ -469,7 +475,71 @@ G.Game = class {
   zombieBaseHp() { const w = Math.max(1, this.wave); return w < 10 ? 80 + 45 * w : 485 * Math.pow(1.09, w - 9); }
   waveCount(w) { const n = Math.round(5 + w * 2.4 + w * w * 0.12); return this.gameType === 'soldats' ? Math.round(n * 0.55) + 2 : n; }
   soldierBaseHp() { const w = Math.max(1, this.wave); return w < 10 ? 90 + 24 * w : 306 * Math.pow(1.07, w - 9); }
-  maxAlive() { return this.gameType === 'soldats' ? Math.min(14, 6 + Math.floor(this.wave / 2) + this.mods.tier) : this.mods.maxAlive; }
+  maxAlive() { return this.gameType === 'soldats' ? Math.min(16, 6 + Math.floor(this.wave / 2) + this.mods.tier) : this.mods.maxAlive; }
+  // ---------- Zone de jeu qui s'agrandit au fil des vagues ----------
+  setupBorder() {
+    const W = this.world.W, c = this.map.playerSpawn;
+    this.borderC = new THREE.Vector2(c.x, c.z);
+    const full = Math.max(c.x, W - c.x, c.z, this.world.D - c.z) + 1;
+    this.borderFull = full;
+    this.borderStart = this.cheats ? full : this.gameType === 'soldats' ? 22 : 16;
+    this.borderWaves = this.gameType === 'soldats' ? 3 : 5;
+    this.borderR = this.borderTarget = this.borderStart;
+    const c2 = document.createElement('canvas'); c2.width = c2.height = 32;
+    const x2 = c2.getContext('2d'); x2.fillStyle = 'rgba(255,110,50,0.18)'; x2.fillRect(0, 0, 32, 32);
+    x2.strokeStyle = 'rgba(255,150,80,0.75)'; x2.lineWidth = 3; for (let i = -32; i < 64; i += 12) { x2.beginPath(); x2.moveTo(i, 32); x2.lineTo(i + 32, 0); x2.stroke(); }
+    this.borderTex = new THREE.CanvasTexture(c2); this.borderTex.wrapS = this.borderTex.wrapT = THREE.RepeatWrapping;
+    const mat = new THREE.MeshBasicMaterial({ map: this.borderTex, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false, fog: false });
+    const g = new THREE.Group();
+    for (let i = 0; i < 4; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat); g.add(m); }
+    const lines = new THREE.MeshBasicMaterial({ color: 0xffa060, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false, fog: false });
+    for (let i = 0; i < 4; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), lines); g.add(m); }
+    this.borderMesh = g; this.scene.add(g);
+    this.layoutBorder();
+  }
+  layoutBorder() {
+    const R = this.borderR, c = this.borderC, H = this.world.H + 12, g = this.borderMesh;
+    if (!g) return;
+    g.visible = R < this.borderFull - 0.5;
+    const sides = [[c.x, c.y - R, 0], [c.x, c.y + R, 0], [c.x - R, c.y, Math.PI / 2], [c.x + R, c.y, Math.PI / 2]];
+    sides.forEach(([x, z, ry], i) => {
+      const m = g.children[i]; m.position.set(x, H / 2, z); m.rotation.set(0, ry, 0); m.scale.set(2 * R, H, 1);
+      if (this.borderTex) this.borderTex.repeat.set(R / 2, H / 4);
+      const l = g.children[i + 4]; l.position.set(x, 1, z); l.rotation.set(0, ry, 0); l.scale.set(2 * R, 0.15, 1);
+    });
+  }
+  updateBorder(dt) {
+    if (this.borderR === undefined) return;
+    if (Math.abs(this.borderR - this.borderTarget) > 0.01) { this.borderR = G.lerp(this.borderR, this.borderTarget, Math.min(1, dt * 1.2)); this.layoutBorder(); }
+    const R = this.borderR - 0.4, c = this.borderC;
+    const clamp = (p) => { p.x = G.clamp(p.x, c.x - R, c.x + R); p.z = G.clamp(p.z, c.y - R, c.y + R); };
+    const pl = this.player;
+    if (!pl.spectator) {
+      const before = pl.pos.x + pl.pos.z;
+      clamp(pl.pos);
+      if (pl.pos.x + pl.pos.z !== before) { this.borderHintT = (this.borderHintT || 0) - dt; if (this.borderHintT <= 0) { this.borderHintT = 3; G.UI.message('', 'Limite de zone : elle s\'agrandit au fil des vagues', 1.5, '#ffa060'); } }
+    }
+    for (const e of this.enemies) if (!e.dead) clamp(e.pos);
+  }
+  expandBorder() {
+    const k = Math.min(1, (this.wave) / (this.borderWaves - 1 || 1));
+    const t = G.lerp(this.borderStart, this.borderFull, k);
+    if (t > this.borderTarget + 0.5) { this.borderTarget = t; return true; }
+    return false;
+  }
+  insideBorder(x, z, m = 1) { const c = this.borderC, R = this.borderR - m; return Math.abs(x - c.x) <= R && Math.abs(z - c.y) <= R; }
+  // ---------- Eau : nage du joueur, vue sous l'eau ----------
+  updateWater(dt) {
+    const pl = this.player, w = this.world;
+    const under = !pl.vehicle && w.blockAt(pl.eye.x, pl.eye.y + 0.05, pl.eye.z) === G.B.WATER;
+    if (under !== this.underwater) {
+      this.underwater = under;
+      const f = this.scene.fog, d = this.map.def;
+      if (under) { f.color.setHex(0x1a4a6a); f.near = 0.5; f.far = 14; }
+      else { f.color.setHex(d.fog[0]); f.near = d.fog[1]; f.far = d.fog[2]; }
+      G.UI.underwater(under);
+    }
+  }
   aliveCount() { let n = 0; for (const e of this.enemies) if (!e.dead) n++; return n; }
   isBossWave(w) { return w % 5 === 0; }
 
@@ -519,7 +589,11 @@ G.Game = class {
   }
   spawnBoss(idx, cycle) {
     const T = (this.gameType === 'soldats' ? G.SBOSSES : G.BOSSES)[idx];
-    const p = this.pickSpawn(14, 30) || this.map.playerSpawn.clone();
+    let p = this.pickSpawn(14, 30) || this.map.playerSpawn.clone();
+    if (T.size >= 1.4) {
+      this.world.computeFlowBig(this.player.pos.x, this.player.pos.y, this.player.pos.z);
+      for (let i = 0; i < 20; i++) { const c = this.pickSpawn(10, 40); if (!c) break; const id = this.world.nodeNear(c.x, c.y, c.z); if (id >= 0 && this.world.nav.big[id] && this.world.nav.distBig[id] >= 0) { p = c; break; } }
+    }
     const b = new G.Enemy(this, T.id, p, { boss: T, hpScale: (1 + 0.6 * cycle) * this.mods.bossHp, cycle });
     this.enemies.push(b);
     this.boss = b;
@@ -556,6 +630,19 @@ G.Game = class {
   }
   pickSpawn(minD = 12, maxD = 40) {
     const pl = this.player.pos, w = this.world;
+    if (this.borderR !== undefined && this.borderR < this.borderFull - 0.5) {
+      // zone réduite : on fait apparaître près du bord intérieur de la zone
+      const R = this.borderR - 2, c = this.borderC, md = Math.min(minD, R * 0.7);
+      for (let i = 0; i < 40; i++) {
+        const side = Math.floor(Math.random() * 4), t = (Math.random() * 2 - 1) * R;
+        const x = Math.floor(side < 2 ? c.x + t : c.x + (side === 2 ? -R : R)), z = Math.floor(side < 2 ? c.y + (side === 0 ? -R : R) : c.y + t);
+        const y = w.standAt(x, z); if (y >= 999) continue;
+        if (Math.hypot(x + 0.5 - pl.x, z + 0.5 - pl.z) < md) continue;
+        if (w.flowDistAt(x + 0.5, y, z + 0.5) < 0) continue;
+        if (w.blockAt(x, y + 0.5, z) === G.B.WATER || w.blockAt(x, y + 0.5, z) === G.B.LAVA) continue;
+        return new THREE.Vector3(x + 0.5, y, z + 0.5);
+      }
+    }
     const ok = [], reach = [];
     const scale = w.W / 64;
     for (const sp of this.map.spawns) {
@@ -590,7 +677,9 @@ G.Game = class {
       const p = this.pickSpawn();
       if (p && this.gameType === 'soldats') {
         // les soldats arrivent par escouades
-        const n = Math.min(this.toSpawn, this.maxAlive() - this.aliveCount(), 2 + Math.min(2, Math.floor(this.wave / 4)));
+        const size = this.wave <= 2 ? 1 + Math.floor(Math.random() * 2) : this.wave <= 5 ? 2 + Math.floor(Math.random() * 2) : this.wave <= 9 ? 3 + Math.floor(Math.random() * 2) : 4 + Math.floor(Math.random() * 2);
+        const n = Math.min(this.toSpawn, this.maxAlive() - this.aliveCount(), size);
+        if (n < size && this.toSpawn > n) { this.spawnT = 0.5; return; } // on attend d'avoir la place pour toute l'escouade
         const squad = { leader: null, members: [] };
         for (let i = 0; i < n; i++) {
           const q = p.clone().add(new THREE.Vector3((i % 2) * 1.2 - 0.6, 0, Math.floor(i / 2) * 1.2));
@@ -600,7 +689,7 @@ G.Game = class {
           e.squad = squad; squad.members.push(e); if (!squad.leader) squad.leader = e;
           this.toSpawn--;
         }
-        this.spawnT += n * 0.6;
+        this.spawnT = G.rand(4, 7) + n * 0.5;
       } else if (p) { this.spawnEnemy(this.chooseType(), p); this.toSpawn--; }
     }
     const bossPending = !!this.curWave.bossPending;
@@ -610,7 +699,7 @@ G.Game = class {
     this.curWave.t = this.time - this.curWave.t0;
     this.waveStats.push(this.curWave);
     this.phase = 'intermission';
-    this.phaseT = 12;
+    this.phaseT = 30;
     this.player.grenades = Math.min(4, this.player.grenades + 2);
     G.Audio.S.waveEnd();
     const next = this.wave + 1;
@@ -618,7 +707,8 @@ G.Game = class {
     let sub = '+2 grenades — [N] pour lancer la vague suivante';
     if (newPerks.length) sub = 'Nouvel atout disponible : ' + newPerks.join(', ');
     if (next === 8) sub = 'La Forge ★ s\'allume à la prochaine vague';
-    this.message('VAGUE ' + this.wave + ' TERMINÉE', sub, 3.5);
+    if (this.expandBorder()) sub = 'La zone de combat s\'agrandit — ' + sub;
+    this.message('VAGUE ' + this.wave + ' TERMINÉE', sub + ' — 30 s pour se préparer', 4);
   }
 
   // ---------- Tir ----------

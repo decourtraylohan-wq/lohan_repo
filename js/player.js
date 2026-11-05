@@ -160,7 +160,10 @@ G.Player = class {
     let speed = (sprinting ? 7.0 : 4.6) * st.move * (foulee ? 1.2 : 1);
     if (this.crouch) speed = 2.4 * st.move;
     speed *= G.lerp(1, 0.55, this.ads);
+    // nage : le corps est dans l'eau
+    this.swimming = w.blockAt(this.pos.x, this.pos.y + 0.9, this.pos.z) === G.B.WATER;
     if (inBlock === G.B.WATER) speed *= 0.6;
+    if (this.swimming) { speed = 3.0 * (foulee ? 1.2 : 1); this.slideT = 0; }
     if (this.slowT > 0) { this.slowT -= dt; speed *= 0.55; }
     this.sprinting = sprinting && wish.lengthSq() > 0;
     const accel = this.onGround ? (feet === G.B.ICE ? 2.5 : 14) : 3;
@@ -177,8 +180,14 @@ G.Player = class {
     }
     if (k.Space && this.onGround) { this.vel.y = this.crouch && this.slideT <= 0 ? 6.5 : 8.2; this.onGround = false; if (this.slideT > 0) this.slideT = 0; }
     this.blocked = false;
-    this.vel.y -= 26 * dt; if (this.vel.y < -40) this.vel.y = -40;
+    if (this.swimming) {
+      // flottaison : on coule doucement, Espace pour remonter, on peut se hisser hors de l'eau contre un bord
+      this.vel.y -= 4 * dt; this.vel.y = G.clamp(this.vel.y, -2.2, 4);
+      if (k.Space) this.vel.y = Math.min(this.vel.y + 14 * dt, 3.4);
+      if (k.Space && this.blockedSide && w.blockAt(this.pos.x, this.pos.y + 1.7, this.pos.z) !== G.B.WATER) this.vel.y = 6.5;
+    } else { this.vel.y -= 26 * dt; if (this.vel.y < -40) this.vel.y = -40; }
     w.moveEntity(this, dt, true);
+    this.blockedSide = this.blocked;
     if (this.pos.y < -10) { this.pos.copy(game.map.playerSpawn); this.vel.set(0, 0, 0); }
 
     // lave

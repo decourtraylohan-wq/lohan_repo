@@ -7,6 +7,8 @@ G.B = {
   ASPHALT: 37, ASPHALT_LINE: 38, SIDEWALK: 39, CONCRETE: 40, CONCRETE_DARK: 41, GLASS: 42, SEWER: 43, ROOF: 44, GRATE: 45,
   CAR_RED: 46, CAR_BLUE: 47, CAR_WHITE: 48, AWNING: 49, WHITEWALL: 50, TIRE: 51, BOOKSHELF: 52, SNOWGRASS: 53, CLAY: 54,
   BIRCH: 55, BIRCH_LEAVES: 56, DARK_LOG: 57, DARK_LEAVES: 58, AUTUMN_LEAVES: 59, SANDBAG: 60, CHISELED: 61, PORTAL: 62, BUSH: 63, MUD: 64, ROCK: 65, SCORIA: 66, SCORIA_DARK: 67, PODZOL: 68, BARBED: 69, WALLPANEL: 70,
+  VOLCROCK: 71, BASALT2: 72, ASH: 73, SCORIA3: 74, ASPHALT_CRACK: 75, BARREL: 76, LOCKER: 77, BIN: 78, GRAFFITI1: 79, GRAFFITI2: 80, RUBBLE: 81, CABINET: 82,
+  STAIR_STONE: 83, STAIR_WOOD: 84, STAIR_DARK: 85, STAIR_CONCRETE: 86, STAIR_SAND: 87, STAIR_METAL: 88,
 };
 
 G.BLOCKS = (function () {
@@ -84,6 +86,26 @@ G.BLOCKS = (function () {
   def(B.PODZOL, 'podzol', 'podzol_side', 'dirt');
   def(B.BARBED, 'barbed', null, null, { solid: true, opaque: false, bulletPass: true, plant: true });
   def(B.WALLPANEL, 'wallpanel');
+  def(B.VOLCROCK, 'volcrock');
+  def(B.BASALT2, 'basalt2');
+  def(B.ASH, 'ash');
+  def(B.SCORIA3, 'scoria3');
+  def(B.ASPHALT_CRACK, 'asphalt_crack', 'asphalt', 'asphalt');
+  def(B.BARREL, 'barrel_top', 'barrel_side', 'barrel_top');
+  def(B.LOCKER, 'cabinet', 'locker', 'cabinet');
+  def(B.BIN, 'bin_top', 'bin_side', 'bin_top');
+  def(B.GRAFFITI1, 'graffiti1');
+  def(B.GRAFFITI2, 'graffiti2');
+  def(B.RUBBLE, 'rubble');
+  def(B.CABINET, 'cabinet');
+  // marches d'escalier (forme de vraie marche, collision d'un bloc plein)
+  const stair = { opaque: false, stair: true };
+  def(B.STAIR_STONE, 'stonebrick', null, null, stair);
+  def(B.STAIR_WOOD, 'planks', null, null, stair);
+  def(B.STAIR_DARK, 'darkbrick', null, null, stair);
+  def(B.STAIR_CONCRETE, 'concrete', null, null, stair);
+  def(B.STAIR_SAND, 'sandstone_top', 'sandstone_side', 'sandstone_top', stair);
+  def(B.STAIR_METAL, 'grate', null, null, Object.assign({}, stair, { opaque: false }));
   return d;
 })();
 
@@ -96,11 +118,13 @@ G.World = class {
     this.details = [];  // petits éléments décoratifs (cailloux…) sans collision
     this.solids = [];   // obstacles construits (barricades, boucliers)
     this.liquidMats = [];
+    this.stairDir = new Map(); // index du bloc -> direction de montée (0:+x 1:-x 2:+z 3:-z)
   }
   idx(x, y, z) { return (y * this.D + z) * this.W + x; }
   inside(x, y, z) { return x >= 0 && y >= 0 && z >= 0 && x < this.W && y < this.H && z < this.D; }
   get(x, y, z) { return this.inside(x, y, z) ? this.data[this.idx(x, y, z)] : 0; }
   set(x, y, z, b) { if (this.inside(x, y, z)) this.data[this.idx(x, y, z)] = b; }
+  setStair(x, y, z, b, dir) { if (!this.inside(x, y, z)) return; this.set(x, y, z, b); this.stairDir.set(this.idx(x, y, z), dir); }
   fill(x0, y0, z0, x1, y1, z1, b) {
     for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++)
       for (let z = Math.min(z0, z1); z <= Math.max(z0, z1); z++)
@@ -144,7 +168,7 @@ G.World = class {
     this.uvCache = {};
     this.chunks = new Map(); this.dirty = new Set();
     this.detailBuckets = new Map();
-    for (const d of this.details) { const k = Math.floor(d.x / this.CH) + ',' + Math.floor(d.z / this.CH); if (!this.detailBuckets.has(k)) this.detailBuckets.set(k, []); this.detailBuckets.get(k).push(d); }
+    for (const d of this.details) { const k = Math.floor((d.box ? d.x0 : d.x) / this.CH) + ',' + Math.floor((d.box ? d.z0 : d.z) / this.CH); if (!this.detailBuckets.has(k)) this.detailBuckets.set(k, []); this.detailBuckets.get(k).push(d); }
     for (let cz = 0; cz * this.CH < this.D; cz++) for (let cx = 0; cx * this.CH < this.W; cx++) this.buildChunk(cx, cz);
   }
   // modifie un bloc après la génération (verre brisé…) et reconstruit les tronçons concernés
@@ -190,6 +214,15 @@ G.World = class {
       if (!b) continue;
       const def = G.BLOCKS[b];
       if (def.plant) { this._plant(groups.opaque, x, y, z, getUV(def.top), rnd); continue; }
+      if (def.stair) {
+        const dir = this.stairDir.get(this.idx(x, y, z)) || 0, uvr = getUV(def.side);
+        const above = this.get(x, y + 1, z);
+        if (above && G.BLOCKS[above].solid && !G.BLOCKS[above].stair) { this._boxB(groups.opaque, x, y, z, x + 1, y + 1, z + 1, uvr, 0.9); continue; }
+        this._boxB(groups.opaque, x, y, z, x + 1, y + 0.5, z + 1, uvr, 0.95);
+        const hx0 = dir === 0 ? x + 0.5 : x, hx1 = dir === 1 ? x + 0.5 : x + 1, hz0 = dir === 2 ? z + 0.5 : z, hz1 = dir === 3 ? z + 0.5 : z + 1;
+        this._boxB(groups.opaque, hx0, y + 0.5, hz0, hx1, y + 1, hz1, uvr, 0.85);
+        continue;
+      }
       const grp = def.liquid ? (def.bright ? groups.lava : groups.water) : (def.bright ? groups.bright : groups.opaque);
       for (let f = 0; f < 6; f++) {
         const F = FACES[f];
@@ -240,7 +273,10 @@ G.World = class {
     }
 
 
-    for (const d of this.detailBuckets.get(key) || []) this._box(groups.opaque, d, getUV(d.tile));
+    for (const d of this.detailBuckets.get(key) || []) {
+      if (d.box) this._boxB(d.bright ? groups.bright : groups.opaque, d.x0, d.y0, d.z0, d.x1, d.y1, d.z1, getUV(d.tile), d.bright ? 1 : 0.85);
+      else this._box(groups.opaque, d, getUV(d.tile));
+    }
     const meshes = [];
     const mk = (g, mat, cast) => {
       if (!g.idx.length) return null;
@@ -290,6 +326,22 @@ G.World = class {
     if (this.waterTex) { this.waterTex.offset.x = t * 0.03; this.waterTex.offset.y = t * 0.017; }
     if (this.lavaTex) { this.lavaTex.offset.x = t * 0.012; this.lavaTex.offset.y = Math.sin(t * 0.2) * 0.05; }
     for (const m of this.liquidMats) if (m.userData.shader) m.userData.shader.uniforms.uTime.value = t;
+  }
+  _boxB(g, x0, y0, z0, x1, y1, z1, uvr, light) {
+    const [u0, v0, u1, v1] = uvr, du = u1 - u0, dv = v1 - v0;
+    const F = [
+      [[1, 0, 0], [[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], [z1 - z0, y1 - y0]],
+      [[-1, 0, 0], [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], [z1 - z0, y1 - y0]],
+      [[0, 1, 0], [[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]], [x1 - x0, z1 - z0]],
+      [[0, 0, 1], [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [x1 - x0, y1 - y0]],
+      [[0, 0, -1], [[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]], [x1 - x0, y1 - y0]],
+    ];
+    for (const [n, vs, [sw, sh]] of F) {
+      const base = g.pos.length / 3;
+      const uv = [[u0, v0], [u0 + du * sw, v0], [u0 + du * sw, v0 + dv * sh], [u0, v0 + dv * sh]];
+      for (let i = 0; i < 4; i++) { g.pos.push(vs[i][0], vs[i][1], vs[i][2]); g.nor.push(n[0], n[1], n[2]); g.uv.push(uv[i][0], uv[i][1]); const l = light * (n[1] ? 1 : 0.88); g.col.push(l, l, l); }
+      g.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
   }
   _box(g, d, uvr) {
     const [u0, v0, u1, v1] = uvr;
@@ -453,7 +505,13 @@ G.World = class {
     for (let i = 0; i < N; i++) inCount[i + 1] += inCount[i];
     const inList = new Int32Array(outList.length), fillPos = inCount.slice();
     for (let i = 0; i < N; i++) for (let k = outStart[i]; k < outStart[i + 1]; k++) inList[fillPos[outList[k]]++] = i;
-    this.nav = { blocked: new Int16Array(N), N, nodeAt, nx: Int16Array.from(nx), ny: Int16Array.from(ny), nz: Int16Array.from(nz), outStart, outList: Int32Array.from(outList), inStart: inCount, inList, dist: new Int32Array(N).fill(-1), queue: new Int32Array(N) };
+    const big = new Uint8Array(N);
+    for (let i = 0; i < N; i++) {
+      let ok = 1;
+      for (let dz = -1; dz <= 1 && ok; dz++) for (let dx = -1; dx <= 1 && ok; dx++) for (let dy = 0; dy <= 2; dy++) if (this.isSolid(nx[i] + dx, ny[i] + dy, nz[i] + dz)) { ok = 0; break; }
+      big[i] = ok;
+    }
+    this.nav = { big, distBig: new Int32Array(N).fill(-1), blocked: new Int16Array(N), N, nodeAt, nx: Int16Array.from(nx), ny: Int16Array.from(ny), nz: Int16Array.from(nz), outStart, outList: Int32Array.from(outList), inStart: inCount, inList, dist: new Int32Array(N).fill(-1), queue: new Int32Array(N) };
   }
   // nœud le plus proche d'une position (on cherche sous les pieds)
   nodeNear(x, y, z) {
@@ -496,6 +554,33 @@ G.World = class {
       for (let y = Math.max(1, Math.floor(min.y) - 1); y <= Math.floor(min.y) + 1; y++) { const id = n.nodeAt[this.idx(x, y, z)]; if (id >= 0) { n.blocked[id] = Math.max(0, n.blocked[id] + delta); ids.push(id); } }
     }
     return ids;
+  }
+  // champ de flux réservé aux grands boss (ne passent que dans les espaces larges)
+  computeFlowBig(x, y, z) {
+    const n = this.nav; if (!n) return;
+    n.distBig.fill(-1);
+    let start = this.nodeNear(x, y, z);
+    if (start < 0) return;
+    const q = n.queue; let qh = 0, qt = 0;
+    n.distBig[start] = 0; q[qt++] = start;
+    while (qh < qt) {
+      const c = q[qh++], cd = n.distBig[c] + 1;
+      for (let k = n.inStart[c]; k < n.inStart[c + 1]; k++) {
+        const a = n.inList[k];
+        if (n.distBig[a] !== -1 || !n.big[a] || n.blocked[a] > 0) continue;
+        n.distBig[a] = cd; q[qt++] = a;
+      }
+    }
+  }
+  nextStepBig(x, y, z) {
+    const n = this.nav; const id = this.nodeNear(x, y, z);
+    if (id < 0) return null;
+    let best = -1, bd = n.distBig[id] < 0 ? 1e9 : n.distBig[id];
+    for (let k = n.outStart[id]; k < n.outStart[id + 1]; k++) {
+      const t = n.outList[k], d = n.distBig[t];
+      if (d >= 0 && d < bd && n.big[t]) { bd = d; best = t; }
+    }
+    return best < 0 ? null : [n.nx[best], n.ny[best], n.nz[best]];
   }
   flowDistAt(x, y, z) { const id = this.nodeNear(x, y, z); return id < 0 ? -1 : this.nav.dist[id]; }
   nextStep(x, y, z) {

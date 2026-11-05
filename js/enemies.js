@@ -58,6 +58,8 @@ G.Enemy = class {
     this.pos = pos.clone();
     this.vel = new THREE.Vector3();
     this.w = Math.min(0.8, 0.6 * this.size); this.h = this.shape === 'crawler' || this.shape === 'quad' ? 0.95 : 1.9;
+    // les grands boss ne passent plus par les portes : boîte plus grosse et chemins larges uniquement
+    if (this.isBoss && this.size >= 1.4) { this.big = true; this.w = Math.min(1.5, 0.62 * this.size); this.h = Math.min(2.85, 1.9 * Math.min(this.size, 1.5)); }
     this.lastAtk = -99;
     this.onGround = false;
     this.dead = false; this.deadT = 0;
@@ -271,7 +273,9 @@ G.Enemy = class {
       const direct = dist < 2.5 || (dist < 7 && Math.abs(dy) < 1.2 && w.lineOfSight(new THREE.Vector3(this.pos.x, this.pos.y + 1.2, this.pos.z), pl.eye));
       if (direct || this.T.floating) moveDir.copy(toP).normalize();
       else {
-        const nxt = w.nextStep(this.pos.x, this.pos.y, this.pos.z);
+        const nxt = this.big ? w.nextStepBig(this.pos.x, this.pos.y, this.pos.z) : w.nextStep(this.pos.x, this.pos.y, this.pos.z);
+        // grand boss sans chemin assez large : il réapparaît ailleurs plutôt que de forcer le passage
+        if (this.big) { this.bigLost = !nxt && dist > 6 ? (this.bigLost || 0) + dt : 0; if (this.bigLost > 3) { this.bigLost = 0; this.respawnFar(); } }
         if (nxt) moveDir.set(nxt[0] + 0.5 - this.pos.x, 0, nxt[2] + 0.5 - this.pos.z).normalize();
         else moveDir.copy(toP).normalize();
       }
@@ -287,7 +291,7 @@ G.Enemy = class {
       else if (this.atkT <= 0) { this.atkT = this.isBoss ? 1.3 : 1.0; this.lastAtk = game.time; game.damagePlayer(this.dmg, this); }
       if (dist < 0.9) speed = 0;
     }
-    if (this.soldier && dist < 1.7 && Math.abs(dy) < 1.6) {
+    if (this.soldier && dist < (this.T.role === 'melee' ? 1.9 : 1.7) && Math.abs(dy) < 1.6 && !this.swimming) {
       // coup de couteau (égorgeur) ou de crosse
       if (this.atkT <= 0) {
         const knife = this.T.role === 'melee';
@@ -318,10 +322,20 @@ G.Enemy = class {
       const sb = w.standBelow(Math.floor(this.pos.x), this.pos.y, Math.floor(this.pos.z));
       const targetY = Math.max(sb < 999 ? sb : this.pos.y, pl.pos.y) + 1.2 + Math.sin(this.anim * 2) * 0.3;
       this.vel.y = (Math.min(w.H, targetY) - this.pos.y) * 2;
-      this.pos.x += this.vel.x * dt; this.pos.z += this.vel.z * dt; this.pos.y += this.vel.y * dt;
+      const nxp = this.pos.x + this.vel.x * dt, nzp = this.pos.z + this.vel.z * dt;
+      if (!w.collides(nxp, this.pos.y, this.pos.z, this.w / 2, this.h, 'enemy')) this.pos.x = nxp; else this.vel.y = Math.max(this.vel.y, 3);
+      if (!w.collides(this.pos.x, this.pos.y, nzp, this.w / 2, this.h, 'enemy')) this.pos.z = nzp; else this.vel.y = Math.max(this.vel.y, 3);
+      if (!w.collides(this.pos.x, this.pos.y + this.vel.y * dt, this.pos.z, this.w / 2, this.h, 'enemy')) this.pos.y += this.vel.y * dt;
       this.pos.x = G.clamp(this.pos.x, 1, w.W - 1); this.pos.z = G.clamp(this.pos.z, 1, w.D - 1);
     } else {
-      this.vel.y -= 26 * dt;
+      // dans l'eau : on nage et on remonte à la surface (la tête dépasse)
+      this.swimming = w.blockAt(this.pos.x, this.pos.y + 0.9, this.pos.z) === G.B.WATER;
+      if (this.swimming) {
+        const headIn = w.blockAt(this.pos.x, this.pos.y + 1.45 * Math.min(this.size, 1.3), this.pos.z) === G.B.WATER;
+        this.vel.y = headIn ? Math.min(this.vel.y + 18 * dt, 2.6) : Math.max(this.vel.y - 6 * dt, -0.6);
+        this.vel.x *= 0.6; this.vel.z *= 0.6;
+        if (this.blocked) this.vel.y = Math.max(this.vel.y, 5);
+      } else this.vel.y -= 26 * dt;
       if (this.vel.y < -30) this.vel.y = -30;
       this.blocked = false;
       w.moveEntity(this, dt, true);
@@ -333,6 +347,15 @@ G.Enemy = class {
       this.blockedBy = null;
     }
 
+    // impossible de traverser le joueur
+    {
+      const dx = this.pos.x - pl.pos.x, dz = this.pos.z - pl.pos.z, d = Math.hypot(dx, dz), minD = this.w / 2 + 0.32;
+      if (d < minD && Math.abs(this.pos.y - pl.pos.y) < 1.7 && !pl.vehicle && !pl.spectator) {
+        const nx = d > 1e-3 ? dx / d : Math.cos(this.anim), nz = d > 1e-3 ? dz / d : Math.sin(this.anim);
+        const tx = pl.pos.x + nx * minD, tz = pl.pos.z + nz * minD;
+        if (!w.collides(tx, this.pos.y, tz, this.w / 2, this.h, 'enemy')) { this.pos.x = tx; this.pos.z = tz; }
+      }
+    }
     const fb = w.blockAt(this.pos.x, this.pos.y + 0.1, this.pos.z);
     if (fb === G.B.LAVA && !this.isBoss) this.damage(this.maxHp * dt * 0.5, 'body', 'lava');
     if (this.pos.y < -5) this.respawnFar();
@@ -340,7 +363,7 @@ G.Enemy = class {
     // détection de blocage
     this.stuckT += dt;
     if (this.stuckT > 5) {
-      const idle = this.soldier ? (this.state === 'move' && !this.los) : (this.state === 'chase' && !this.T.ranged);
+      const idle = this.soldier ? (this.state === 'move' && !this.los) || (!this.los && game.time - (this.lastSeen || 0) > 10) : (this.state === 'chase' && !this.T.ranged);
       if (this.pos.distanceTo(this.lastPos) < 1.2 && game.time - this.lastAtk > 5 && idle) this.respawnFar();
       this.stuckT = 0; this.lastPos.copy(this.pos);
     }
@@ -381,6 +404,8 @@ G.Enemy = class {
       else if (this.legL) { this.legL.position.y = this.legR.position.y = this.legH; }
     }
     this.mesh.position.copy(this.pos);
+    if (this.swimming && !this.isBoss) { this.mesh.rotation.x = -0.9; if (this.armL) { this.armL.rotation.x = -2.6 + Math.sin(this.anim * 5) * 0.9; this.armR.rotation.x = -2.6 - Math.sin(this.anim * 5) * 0.9; } }
+    else if (!this.dead) this.mesh.rotation.x = 0;
     if (this.state === 'windup') this.mesh.position.x += Math.sin(this.anim * 60) * 0.05;
     this.mesh.updateMatrixWorld(true);
     this.head.getWorldPosition(this._head);
@@ -388,7 +413,11 @@ G.Enemy = class {
   }
 
   respawnFar() {
-    const sp = this.isBoss ? this.game.pickSpawn(8, 20) : this.game.pickSpawn();
+    let sp = this.isBoss ? this.game.pickSpawn(8, 20) : this.game.pickSpawn();
+    if (this.big) {
+      const w = this.game.world;
+      for (let i = 0; i < 15; i++) { const c = this.game.pickSpawn(8, 30); if (!c) break; const id = w.nodeNear(c.x, c.y, c.z); if (id >= 0 && w.nav.big[id] && w.nav.distBig[id] >= 0) { sp = c; break; } }
+    }
     if (sp) { this.pos.copy(sp); this.vel.set(0, 0, 0); this.lastPos.copy(sp); }
   }
 
@@ -459,6 +488,7 @@ G.Enemy = class {
     const range = this.isBoss ? (T.id === 'pyro' ? [1, 7] : T.id === 'juggernaut' ? [3, 24] : [6, 26]) : T.range;
     this.shotT -= dt; this.grenT -= dt; this.stateT -= dt; this.searchT = (this.searchT || 0) - dt;
     this.crouching = false;
+    if (this.swimming) { this.releaseCover(); this.state = 'move'; this.navMode = 'flow'; return this.speed * 0.6; } // il nage vers la rive
     if (this.isBoss) { const r = this.soldierBoss(dt, dist, range); if (r !== undefined) return r; }
     if (this.laser && !(this.state === 'peek' || this.state === 'engage')) this.updateLaser(false);
 
@@ -480,7 +510,7 @@ G.Enemy = class {
     if (role === 'rush') return this.engageOrAdvance(dt, dist, toP, moveDir, range, 1.35);
     if (role === 'melee') {
       // court de couvert en couvert puis fonce en zigzag
-      this.navMode = 'flow';
+      this.navMode = 'flow'; this.state = 'move';
       if (this.los && dist < 12) { this.navMode = 'none'; const side = new THREE.Vector3(-toP.z, 0, toP.x).normalize(); moveDir.copy(toP).normalize().addScaledVector(side, Math.sin(this.anim * 4) * 0.6).normalize(); }
       this.crouching = false;
       return this.speed * (this.los ? 1.25 : 1.1);
@@ -508,6 +538,7 @@ G.Enemy = class {
       if (T.id === 'heavy' && this.los && dist < range[1]) this.tryFire(dt, dist, 0.6);
       return this.speed * 1.5;
     }
+    if ((this.state === 'cover' || this.state === 'peek') && game.time - (this.lastSeen || game.time) > 8) { this.releaseCover(); this.state = 'move'; this.searchT = 3; this.lastSeen = game.time - 2; }
     if (this.state === 'cover' || this.state === 'peek') {
       this.navMode = 'none';
       const compromised = this.state === 'cover' && !this.hiddenLow && this.losT < 0.05;
@@ -570,6 +601,7 @@ G.Enemy = class {
   }
   tryFire(dt, dist, accMul) {
     const T = this.T;
+    if (this.swimming) return; // impossible de tirer en nageant
     this.aimT += dt;
     const react = (T.react || 0.6) * (this.elite ? 0.7 : 1);
     if (this.aimT > react && this.shotT <= 0 && this.ammo > 0) {
@@ -598,6 +630,7 @@ G.Enemy = class {
       let id = -1, yy;
       for (yy = Math.min(w.H - 2, cy + 3); yy >= Math.max(1, cy - 5); yy--) { id = n.nodeAt[w.idx(x, yy, z)]; if (id >= 0) break; }
       if (id < 0 || n.dist[id] < 0) continue;
+      if (w.get(x, yy, z) === G.B.WATER || w.get(x, yy + 1, z) === G.B.WATER) continue; // pas de cachette sous l'eau
       const px = x + 0.5, pz = z + 0.5;
       const dP = Math.hypot(px - pl.pos.x, pz - pl.pos.z);
       if (hideOnly && dP < 5) continue;

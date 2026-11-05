@@ -201,3 +201,5 @@ h3.sec { font-family: 'Bungee', sans-serif; font-weight: 400; letter-spacing: 1p
 .card .ico { float: left; width: 64px; height: 64px; margin: -4px 10px 4px -4px; image-rendering: auto; background: radial-gradient(circle, rgba(255,255,255,0.08), transparent 70%); border-radius: 8px; }
 .badge { float: left; width: 46px; height: 46px; margin: 0 12px 4px 0; display: grid; place-items: center; border-radius: 50%; font-size: 20px; font-weight: 800; color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--c) 70%, white), var(--c) 55%, color-mix(in srgb, var(--c) 50%, black)); box-shadow: 0 0 0 2px rgba(0,0,0,0.6), 0 0 14px color-mix(in srgb, var(--c) 50%, transparent); text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
 .card::after { content: ''; display: block; clear: both; }
+
+#water { position: absolute; inset: 0; opacity: 0; transition: opacity .25s; background: radial-gradient(ellipse at center, rgba(40,110,160,0.35), rgba(10,40,70,0.75)); }

@@ -23,7 +23,7 @@ puis va sur http://localhost:8000.
   - Ruines du Désert : ziggourat, canyon de mesas, oasis, tombeau souterrain.
   - Avant-poste Gelé : fort avec chemin de ronde, montagne avec belvédère, lac gelé, chalets.
   - Forteresse Infernale : lac et rivières de lave, donjon, tour de guet et passerelle surélevée.
-  - Ville Fantôme : immeubles visitables étage par étage jusqu'au toit, magasins, parkings, parc, et égouts sous les rues d'où sortent les ennemis.
+  - Ville Fantôme (128×128) : ville dévastée avec immeubles visitables étage par étage (accueil, bureaux, casiers), quartier serré de ruelles avec graffitis et escaliers de secours, routes défoncées, cratère de bombe qui donne sur les égouts, lampadaires, poubelles, accès aux égouts depuis les trottoirs.
 - **8 armes détaillées** : culasse, pompe et chargeur animés, éjection des douilles, visée par les organes de visée. Elles s'achètent sur des socles ou dans la caisse mystère, et la Forge ★ les améliore (camouflage violet).
 - **6 atouts** qui s'activent au fil des vagues, et **6 bonus** lâchés par les ennemis.
 - **Zombies** : zombie, Coureur, Rampant, Brute, Traqueur (quadrupède qui bondit), Gonflé, Hurleuse (son cri ralentit le joueur et enrage les autres zombies), Cracheur, Blindé. Boss : Colosse, Nécromancien, Bélier.
@@ -45,7 +45,10 @@ puis va sur http://localhost:8000.
 - **Mode triche**, à cocher avant de lancer : vague de départ, points, armes, atouts, invincibilité, munitions infinies et spectateur. En jeu, K passe la vague, L donne +10 000 points et T active le spectateur (vol libre sans ennemis). Ces parties ne sont pas enregistrées.
 - **Voitures conduisibles** (Ville) : E pour monter ou descendre, ZQSD pour conduire. Elles écrasent les ennemis, encaissent les tirs, puis prennent feu et explosent.
 - **Verre cassable** : tirer à travers une vitre la brise.
-- **Désert** : une pyramide au sommet du canyon abrite un portail qui mène au tombeau souterrain (et inversement).
+- **Désert** : une pyramide au sommet du canyon abrite un portail qui mène au tombeau souterrain (et inversement). Une grotte traverse la crête à l'est et redescend de l'autre côté.
+- **Zone de combat** qui s'agrandit à chaque vague : elle couvre toute la carte à la vague 5 en Zombies et à la vague 3 en Soldats. Il y a 30 secondes de préparation entre les vagues (N pour lancer plus tôt).
+- **Eau** : on nage (Espace pour remonter ou se hisser sur un bord) et la vue devient bleue sous l'eau. Les ennemis nagent aussi, et les soldats ne peuvent pas tirer dans l'eau.
+- **Escaliers** en vraies marches partout, avec assez de hauteur pour monter. La Ville a des escaliers de secours métalliques à la new-yorkaise.
 - **Mode Classé** : 7 rangs, de Bronze à Légende. La difficulté augmente avec le rang.
 - **Statistiques** : carrière, record par carte et par type de partie, historique et détail vague par vague. Tout est sauvegardé dans le navigateur.
 
