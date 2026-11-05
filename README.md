@@ -14,14 +14,28 @@ puis va sur http://localhost:8000.
 
 ## Contenu
 
-- **4 cartes** : Village Sylvestre, Ruines du Désert, Avant-poste Gelé (de nuit, sous la neige), Forteresse Infernale (avec des rivières de lave).
-- **8 armes** : pistolet, SMG, fusil à pompe, fusil d'assaut, sniper, revolver, LMG et le Désintégrateur (arme à effet de zone). Elles s'achètent sur les socles dorés ou dans la caisse mystère, et la Forge ★ (à partir de la vague 8) les améliore.
-- **6 atouts** (machines colorées) qui s'activent au fil des vagues : Cuirasse, Rafale, Main Leste, Second Souffle, Foulée, Bandoulière.
-- **6 bonus lâchés par les zombies** : Munitions max, Mort instantanée, Points ×2, Bombe, Fureur, Butin.
-- **Ennemis** : zombie, Coureur, Brute, Gonflé (explose), Cracheur (attaque à distance), Blindé (casque), plus les squelettes invoqués.
-- **Boss toutes les 5 vagues** : le Colosse (frappe le sol, il faut sauter), le Nécromancien (invoque des squelettes, se téléporte, lance des orbes) et le Bélier (charge ; s'il percute un mur, il est étourdi et prend 2× plus de dégâts). Ils reviennent plus forts à chaque cycle.
-- **Mode Classé** : 7 rangs (de Bronze à Légende, en RP). Tu gagnes ou perds des RP selon la vague atteinte par rapport à l'objectif de ton rang. Plus ton rang monte, plus les zombies sont résistants et rapides, plus les spéciaux arrivent tôt et moins il y a de bonus.
-- **Statistiques** : carrière complète, record par carte, historique des 60 dernières parties et détail vague par vague de chaque partie. Tout est sauvegardé dans le navigateur (localStorage).
+- **2 types de partie**, à choisir avant de lancer :
+  - **Zombies** : des hordes et des boss monstrueux.
+  - **Soldats** : des escouades armées qui tirent en rafales, se déplacent, lancent des grenades et utilisent des fusils de précision à laser.
+- **2 modes** : Classique ou Classé.
+- **5 cartes** :
+  - Village Sylvestre : lac, rivière avec un pont, champs de blé, grange, colline boisée.
+  - Ruines du Désert : ziggourat, canyon de mesas, oasis, tombeau souterrain.
+  - Avant-poste Gelé : fort avec chemin de ronde, montagne avec belvédère, lac gelé, chalets.
+  - Forteresse Infernale : lac et rivières de lave, donjon, tour de guet et passerelle surélevée.
+  - Ville Fantôme : immeubles visitables étage par étage jusqu'au toit, magasins, parkings, parc, et égouts sous les rues d'où sortent les ennemis.
+- **8 armes détaillées** : culasse, pompe et chargeur animés, éjection des douilles, visée par les organes de visée. Elles s'achètent sur des socles ou dans la caisse mystère, et la Forge ★ les améliore (camouflage violet).
+- **6 atouts** qui s'activent au fil des vagues, et **6 bonus** lâchés par les ennemis.
+- **Zombies** : zombie, Coureur, Rampant, Brute, Traqueur (quadrupède qui bondit), Gonflé, Hurleuse (son cri ralentit le joueur et enrage les autres zombies), Cracheur, Blindé. Boss : Colosse, Nécromancien, Bélier.
+- **Soldats** : Fantassin, Assaillant, Brécheur, Tireur d'élite, Mitrailleur, Grenadier. Boss : Juggernaut (minigun), Commandant (appelle des renforts), Pyromane (lance-flammes).
+- **Rendu** :
+  - ciel dégradé avec soleil et étoiles ;
+  - ombres dynamiques (qualité haute) ;
+  - léger shader de post-traitement (étalonnage des couleurs par carte, vignettage, grain, distorsion au cri de la Hurleuse) ;
+  - occlusion ambiante, végétation (herbes hautes, fleurs, blé).
+- **Sons synthétisés** : détonations en plusieurs couches, réverbération, sons spatialisés (gauche/droite et distance), sifflement des balles qui vous ratent, ambiance par carte, battements de cœur quand la vie est basse.
+- **Mode Classé** : 7 rangs, de Bronze à Légende. La difficulté augmente avec le rang.
+- **Statistiques** : carrière, record par carte et par type de partie, historique et détail vague par vague. Tout est sauvegardé dans le navigateur.
 
 ## Contrôles
 

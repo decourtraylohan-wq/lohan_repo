@@ -16,8 +16,9 @@ G.Game = class {
     this.renderer.outputEncoding = THREE.sRGBEncoding;
     this.renderer.autoClear = false;
     this.applyQuality();
-    this.camera = new THREE.PerspectiveCamera(75, 1, 0.05, 220);
+    this.camera = new THREE.PerspectiveCamera(75, 1, 0.05, 260);
     this.player = new G.Player(this);
+    this.setupPost();
     this.phase = 'menu';
     this.paused = false;
     this.shakeAmt = 0;
@@ -32,14 +33,67 @@ G.Game = class {
     requestAnimationFrame((t) => this.frame(t));
   }
 
+  setupPost() {
+    const q = G.Ranked.profile.settings.quality;
+    this.usePost = q !== 'basse';
+    if (this.post) { this.post.rt.dispose(); }
+    const isGL2 = this.renderer.capabilities.isWebGL2;
+    const rt = new THREE.WebGLRenderTarget(4, 4, { samples: isGL2 && q === 'haute' ? 4 : 0 });
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { tDiffuse: { value: rt.texture }, uTime: { value: 0 }, uTint: { value: new THREE.Vector3(1, 1, 1) }, uWarp: { value: 0 }, uSat: { value: 1.12 }, uContrast: { value: 1.08 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: [
+        'uniform sampler2D tDiffuse; uniform float uTime; uniform vec3 uTint; uniform float uWarp; uniform float uSat; uniform float uContrast; varying vec2 vUv;',
+        'float rnd(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }',
+        'void main(){',
+        '  vec2 uv = vUv;',
+        '  if (uWarp > 0.0) uv += vec2(sin(uv.y * 30.0 + uTime * 12.0), cos(uv.x * 26.0 + uTime * 9.0)) * 0.006 * uWarp;',
+        '  vec3 c = texture2D(tDiffuse, uv).rgb;',
+        '  if (uWarp > 0.0) { c.r = texture2D(tDiffuse, uv + vec2(0.004 * uWarp, 0.0)).r; c.b = texture2D(tDiffuse, uv - vec2(0.004 * uWarp, 0.0)).b; }',
+        '  float l = dot(c, vec3(0.299, 0.587, 0.114));',
+        '  c = mix(vec3(l), c, uSat);',
+        '  c = (c - 0.18) * uContrast + 0.18;',
+        '  c *= uTint;',
+        '  vec2 d = vUv - 0.5; c *= 1.0 - dot(d, d) * 0.9;',
+        '  c += (rnd(vUv * 731.0 + uTime) - 0.5) * 0.018;',
+        '  gl_FragColor = linearToOutputTexel(vec4(max(c, 0.0), 1.0));',
+        '}',
+      ].join('\n'),
+      depthTest: false, depthWrite: false,
+    });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat); quad.frustumCulled = false;
+    const scene = new THREE.Scene(); scene.add(quad);
+    this.post = { rt, mat, scene, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1) };
+    this.resize && this.resize();
+  }
+  render() {
+    const r = this.renderer, playing = this.phase !== 'menu' && this.phase !== 'over';
+    if (this.sky) this.sky.position.copy(this.camera.position);
+    if (this.stars) this.stars.position.copy(this.camera.position);
+    if (this.usePost) {
+      r.setRenderTarget(this.post.rt); r.clear();
+      r.render(this.scene, this.camera);
+      if (playing) { r.clearDepth(); r.render(this.player.vmScene, this.player.vmCam); }
+      r.setRenderTarget(null); r.clear();
+      this.post.mat.uniforms.uTime.value = (this.post.mat.uniforms.uTime.value + 0.016) % 100;
+      this.post.mat.uniforms.uWarp.value = Math.max(0, (this.warpT || 0));
+      r.render(this.post.scene, this.post.cam);
+    } else {
+      r.setRenderTarget(null); r.clear();
+      r.render(this.scene, this.camera);
+      if (playing) { r.clearDepth(); r.render(this.player.vmScene, this.player.vmCam); }
+    }
+  }
   applyQuality() {
     const q = G.Ranked.profile.settings.quality;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, q === 'haute' ? 1.5 : q === 'moyenne' ? 1 : 0.7));
+    if (this.post) this.setupPost();
     this.resize && this.camera && this.resize();
   }
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setSize(w, h, false);
+    if (this.post) { const pr = this.renderer.getPixelRatio(); this.post.rt.setSize(Math.floor(w * pr), Math.floor(h * pr)); }
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
     this.player.vmCam.aspect = w / h; this.player.vmCam.updateProjectionMatrix();
   }
@@ -51,13 +105,29 @@ G.Game = class {
     this.map = map; this.world = map.world;
     const d = map.def;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(d.sky);
+    scene.background = new THREE.Color(d.sky[1]);
     scene.fog = new THREE.Fog(d.fog[0], d.fog[1], d.fog[2]);
     scene.add(new THREE.HemisphereLight(d.hemi[0], d.hemi[1], d.hemi[2]));
-    const sun = new THREE.DirectionalLight(d.sun[0], d.sun[1]); sun.position.set(0.6, 1, 0.35); scene.add(sun);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.18));
+    const q = G.Ranked.profile.settings.quality;
+    const shadows = q === 'haute';
+    this.renderer.shadowMap.enabled = shadows;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    const sun = new THREE.DirectionalLight(d.sun[0], d.sun[1]);
+    this.sunDir = new THREE.Vector3(0.55, 1, 0.35).normalize();
+    sun.position.copy(this.sunDir).multiplyScalar(60).add(new THREE.Vector3(d.size / 2, 0, d.size / 2));
+    sun.target.position.set(d.size / 2, 0, d.size / 2);
+    if (shadows) {
+      sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+      const c = sun.shadow.camera; c.left = -45; c.right = 45; c.top = 45; c.bottom = -45; c.near = 1; c.far = 160;
+      sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.02;
+    }
+    scene.add(sun); scene.add(sun.target); this.sun = sun;
+    scene.add(new THREE.AmbientLight(0xffffff, 0.16));
     this.scene = scene;
-    this.world.buildMesh(scene);
+    this.world.buildMesh(scene, shadows);
+    this.buildSky(d);
+    const tints = { village: [1.02, 1.0, 0.96], desert: [1.06, 1.0, 0.88], toundra: [0.92, 0.98, 1.1], enfer: [1.12, 0.92, 0.84], ville: [0.98, 1.0, 1.03] };
+    const tt = tints[d.id] || [1, 1, 1]; this.post.mat.uniforms.uTint.value.set(tt[0], tt[1], tt[2]);
     // lumière dynamique (tirs / explosions)
     this.flashLight = new THREE.PointLight(0xffc060, 0, 10); scene.add(this.flashLight);
     this.boomLight = new THREE.PointLight(0xff8030, 0, 16); scene.add(this.boomLight);
@@ -68,6 +138,25 @@ G.Game = class {
     this.enemies = []; this.projectiles = []; this.powerups = []; this.fx = []; this.particlesList = [];
     this.tracers = [];
     scene.add(this.camera);
+  }
+  buildSky(d) {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { top: { value: new THREE.Color(d.sky[0]) }, hor: { value: new THREE.Color(d.sky[1]) }, sunDir: { value: this.sunDir.clone() }, sunCol: { value: new THREE.Color(d.sun[0]) }, night: { value: d.weather === 'snow' || d.id === 'enfer' ? 1 : 0 } },
+      vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform vec3 top; uniform vec3 hor; uniform vec3 sunDir; uniform vec3 sunCol; uniform float night; varying vec3 vDir; void main(){ float h = clamp(vDir.y, 0.0, 1.0); vec3 c = mix(hor, top, pow(h, 0.6)); float s = max(dot(normalize(vDir), sunDir), 0.0); c += sunCol * (pow(s, 600.0) * 2.0 + pow(s, 12.0) * 0.25) * (1.0 - night * 0.8); if (vDir.y < 0.0) c = hor; gl_FragColor = linearToOutputTexel(vec4(c, 1.0)); }',
+      side: THREE.BackSide, depthWrite: false, fog: false,
+    });
+    this.sky = new THREE.Mesh(new THREE.SphereGeometry(230, 24, 12), mat);
+    this.sky.renderOrder = -1;
+    this.scene.add(this.sky);
+    this.stars = null;
+    if (d.weather === 'snow') {
+      const N = 600, pos = new Float32Array(N * 3);
+      for (let i = 0; i < N; i++) { const a = Math.random() * Math.PI * 2, b = Math.random() * 0.45 + 0.08; pos[i * 3] = Math.cos(a) * Math.cos(b) * 200; pos[i * 3 + 1] = Math.sin(b) * 200; pos[i * 3 + 2] = Math.sin(a) * Math.cos(b) * 200; }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      this.stars = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 1.2, sizeAttenuation: false, fog: false }));
+      this.scene.add(this.stars);
+    }
   }
   disposeScene() {
     for (const e of this.enemies || []) e.remove();
@@ -96,7 +185,7 @@ G.Game = class {
       } else if (s.type === 'wall') {
         const m = new THREE.Mesh(new THREE.BoxGeometry(1.04, 1.04, 1.04), new THREE.MeshLambertMaterial({ map: G.Tex.noiseTex('pedestal', 0x4a4e56, 20, (ctx, rnd, px) => { for (let x = 0; x < 8; x++) { px(x, 0, 0xe0b040); px(x, 7, 0xe0b040); } }) }));
         m.position.y = 0.5; g.add(m);
-        const gun = G.makeWeaponModel(s.weapon, false); gun.scale.setScalar(1.6); gun.position.y = 1.45; g.add(gun); st.gun = gun;
+        const gun = G.makeWeaponModel(s.weapon, false, true); gun.scale.setScalar(1.3); gun.position.y = 1.45; g.add(gun); st.gun = gun;
       } else if (s.type === 'perk') {
         const P = G.PERKS[s.perk];
         const body = new THREE.Mesh(new THREE.BoxGeometry(1.04, 2.04, 1.04), new THREE.MeshLambertMaterial({ map: G.Tex.noiseTex('perk' + s.perk, P.color, 30, (ctx, rnd, px) => { for (let x = 1; x < 7; x++) for (let y = 2; y < 5; y++) px(x, y, 0x1a1a1a); }) }));
@@ -151,10 +240,12 @@ G.Game = class {
   buildMinimap() { this.minimapImg = G.topDown(this.world); }
 
   // ---------- Démarrage / fin ----------
-  start(mapId, mode) {
+  start(mapId, mode, gameType = 'zombies') {
     G.Audio.init();
     this.loadMap(mapId);
     this.mode = mode;
+    this.gameType = gameType;
+    G.Audio.startAmbient(mapId);
     this.mods = G.Ranked.modifiers(mode);
     this.player.reset(this.map.playerSpawn);
     this.wave = 0; this.points = 500; this.time = 0;
@@ -165,10 +256,10 @@ G.Game = class {
     this.phase = 'intermission'; this.phaseT = 5;
     this.boss = null; this.dropsThisWave = 0;
     this.flowT = 0; this.paused = false;
-    this.world.computeFlow(Math.floor(this.player.pos.x), Math.floor(this.player.pos.z));
+    this.world.computeFlow(this.player.pos.x, this.player.pos.y, this.player.pos.z);
     this.lastPerkWave = 0;
     G.UI.showHUD(true);
-    this.message('PRÉPAREZ-VOUS', this.map.def.name + (mode === 'ranked' ? ' — CLASSÉ ' + G.Ranked.rankInfo(G.Ranked.profile.rp).label : ' — CLASSIQUE'), 3.5);
+    this.message('PRÉPAREZ-VOUS', (gameType === 'soldats' ? 'Soldats — ' : 'Zombies — ') + this.map.def.name + (mode === 'ranked' ? ' — CLASSÉ ' + G.Ranked.rankInfo(G.Ranked.profile.rp).label : ' — CLASSIQUE'), 3.5);
     this.lockPointer();
   }
   lockPointer() { try { const p = this.canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* ignoré */ } }
@@ -176,6 +267,7 @@ G.Game = class {
     this.phase = 'menu'; this.paused = false;
     if (document.pointerLockElement) document.exitPointerLock();
     G.UI.showHUD(false);
+    G.Audio.stopAmbient();
     this.loadMap(this.map.def.id);
   }
   setPaused(p) {
@@ -233,23 +325,27 @@ G.Game = class {
     if (dt > 0.05) dt = 0.05;
     if (!this.scene) return;
     if (this.phase === 'menu' || this.phase === 'over') {
-      const a = t * 0.00005;
-      this.camera.position.set(32 + Math.cos(a) * 30, 22, 32 + Math.sin(a) * 30);
-      this.camera.lookAt(32, 8, 32);
+      const a = t * 0.00005, c = this.world.W / 2;
+      this.camera.position.set(c + Math.cos(a) * c * 0.85, this.world.H * 0.7 + 4, c + Math.sin(a) * c * 0.85);
+      this.camera.lookAt(c, this.world.H * 0.3, c);
       if (this.camera.fov !== 70) { this.camera.fov = 70; this.camera.updateProjectionMatrix(); }
       this.updateAmbient(dt);
-      this.renderer.clear();
-      this.renderer.render(this.scene, this.camera);
+      this.updateSun(this.camera.position);
+      this.render();
       return;
     }
     if (!this.paused) this.update(dt);
-    this.renderer.clear();
-    this.renderer.render(this.scene, this.camera);
-    this.renderer.clearDepth();
-    this.renderer.render(this.player.vmScene, this.player.vmCam);
+    this.updateSun(this.player.pos);
+    this.render();
     if (!this.paused) this.updateHUD(dt);
   }
 
+  updateSun(p) {
+    if (!this.sun) return;
+    const x = Math.round(p.x / 4) * 4, z = Math.round(p.z / 4) * 4;
+    this.sun.target.position.set(x, 0, z);
+    this.sun.position.set(x + this.sunDir.x * 70, this.sunDir.y * 70, z + this.sunDir.z * 70);
+  }
   updateAmbient(dt) {
     if (this.weather) {
       const p = this.weather.pts, arr = p.geometry.attributes.position.array, c = this.camera.position;
@@ -280,7 +376,11 @@ G.Game = class {
 
     // champ de flux
     this.flowT -= dt;
-    if (this.flowT <= 0) { this.flowT = 0.25; this.world.computeFlow(Math.floor(pl.pos.x), Math.floor(pl.pos.z)); }
+    if (this.flowT <= 0) { this.flowT = 0.25; this.world.computeFlow(pl.pos.x, pl.pos.y, pl.pos.z); }
+    G.Audio.setListener(pl.eye.x, pl.eye.y, pl.eye.z, pl.yaw);
+    if (this.warpT > 0) this.warpT -= dt;
+    this.beatT = (this.beatT || 0) - dt;
+    if (pl.hp < pl.maxHp * 0.3 && this.beatT <= 0) { this.beatT = 0.9; G.Audio.S.heartbeat(); }
 
     this.updateWaves(dt);
     // ennemis
@@ -299,7 +399,9 @@ G.Game = class {
 
   // ---------- Vagues ----------
   zombieBaseHp() { const w = Math.max(1, this.wave); return w < 10 ? 80 + 45 * w : 485 * Math.pow(1.09, w - 9); }
-  waveCount(w) { return Math.round(5 + w * 2.4 + w * w * 0.12); }
+  waveCount(w) { const n = Math.round(5 + w * 2.4 + w * w * 0.12); return this.gameType === 'soldats' ? Math.round(n * 0.55) + 2 : n; }
+  soldierBaseHp() { const w = Math.max(1, this.wave); return w < 10 ? 90 + 24 * w : 306 * Math.pow(1.07, w - 9); }
+  maxAlive() { return this.gameType === 'soldats' ? Math.min(14, 6 + Math.floor(this.wave / 2) + this.mods.tier) : this.mods.maxAlive; }
   aliveCount() { let n = 0; for (const e of this.enemies) if (!e.dead) n++; return n; }
   isBossWave(w) { return w % 5 === 0; }
 
@@ -314,6 +416,7 @@ G.Game = class {
     if (this.isBossWave(w)) {
       this.toSpawn = Math.round(this.toSpawn * 0.45);
       const idx = (w / 5 - 1) % 3, cycle = Math.floor((w / 5 - 1) / 3);
+      this.curWave.bossPending = true;
       this.bossT = 2.5; this.bossArgs = [idx, cycle];
       this.message('VAGUE ' + w, '⚠ UN BOSS APPROCHE ⚠', 3);
       G.Audio.S.boss();
@@ -325,7 +428,19 @@ G.Game = class {
   waveHint(w) {
     const e = this.mods.early;
     const hints = [];
+    if (this.gameType === 'soldats') {
+      if (w + e === 2) hints.push('Des Assaillants arrivent au contact');
+      if (w + e === 3) hints.push('Brécheurs à fusil à pompe !');
+      if (w + e === 4) hints.push('Grenadiers : attention aux grenades');
+      if (w + e === 6) hints.push("Tireurs d'élite : repérez le laser rouge !");
+      if (w + e === 8) hints.push('Mitrailleurs lourds en approche');
+      if (w === 8) hints.push('La Forge est active ★');
+      return hints.join(' — ');
+    }
     if (w + e === 3) hints.push('Des Coureurs rôdent…');
+    if (w + e === 4) hints.push('Des Rampants se faufilent au sol');
+    if (w + e === 7) hints.push('Traqueurs : ils bondissent sur vous !');
+    if (w + e === 9) hints.push('Hurleuses : leur cri vous ralentit et enrage les autres');
     if (w + e === 6) hints.push('Attention aux Brutes !');
     if (w + e === 8) hints.push('Les Gonflés explosent au contact !');
     if (w + e === 11) hints.push('Des Cracheurs à distance !');
@@ -334,12 +449,12 @@ G.Game = class {
     return hints.join(' — ');
   }
   spawnBoss(idx, cycle) {
-    const T = G.BOSSES[idx];
+    const T = (this.gameType === 'soldats' ? G.SBOSSES : G.BOSSES)[idx];
     const p = this.pickSpawn(14, 30) || this.map.playerSpawn.clone();
     const b = new G.Enemy(this, T.id, p, { boss: T, hpScale: (1 + 0.6 * cycle) * this.mods.bossHp, cycle });
     this.enemies.push(b);
     this.boss = b;
-    this.curWave.boss = T.name;
+    this.curWave.boss = T.name; this.curWave.bossPending = false;
     this.message(T.name, cycle > 0 ? 'Il est revenu… plus fort.' : 'Abattez-le !', 3);
     G.Audio.S.boss();
     this.shake(0.6);
@@ -348,7 +463,19 @@ G.Game = class {
     const w = this.wave, ww = w + this.mods.early, r = Math.random();
     let acc = 0;
     const opts = [];
-    if (ww >= 3) opts.push(['runner', Math.min(0.3, (ww - 2) * 0.04)]);
+    if (this.gameType === 'soldats') {
+      if (ww >= 2) opts.push(['assault', Math.min(0.3, 0.12 + ww * 0.02)]);
+      if (ww >= 3) opts.push(['breacher', Math.min(0.15, (ww - 2) * 0.03)]);
+      if (ww >= 4) opts.push(['grenadier', Math.min(0.12, (ww - 3) * 0.025)]);
+      if (ww >= 6) opts.push(['sniper', Math.min(0.12, (ww - 5) * 0.025)]);
+      if (ww >= 8) opts.push(['heavy', Math.min(0.14, (ww - 7) * 0.025)]);
+      for (const [t, p] of opts) { acc += p; if (r < acc) return t; }
+      return 'rifleman';
+    }
+    if (ww >= 3) opts.push(['runner', Math.min(0.26, (ww - 2) * 0.04)]);
+    if (ww >= 4) opts.push(['crawler', Math.min(0.1, (ww - 3) * 0.02)]);
+    if (ww >= 7) opts.push(['stalker', Math.min(0.09, (ww - 6) * 0.018)]);
+    if (ww >= 9) opts.push(['screamer', Math.min(0.05, (ww - 8) * 0.012)]);
     if (ww >= 6) opts.push(['brute', Math.min(0.12, (ww - 5) * 0.018)]);
     if (ww >= 8) opts.push(['bloater', Math.min(0.1, (ww - 7) * 0.018)]);
     if (ww >= 11) opts.push(['spitter', Math.min(0.1, (ww - 10) * 0.018)]);
@@ -359,16 +486,18 @@ G.Game = class {
   pickSpawn(minD = 12, maxD = 40) {
     const pl = this.player.pos, w = this.world;
     const ok = [], reach = [];
-    for (const [x, z] of this.map.spawns) {
-      if (w.flowDist(x, z) < 0) continue;
-      reach.push([x, z]);
+    const scale = w.W / 64;
+    for (const sp of this.map.spawns) {
+      const [x, y, z] = sp;
+      if (w.flowDistAt(x + 0.5, y, z + 0.5) < 0) continue;
+      reach.push(sp);
       const d = Math.hypot(x + 0.5 - pl.x, z + 0.5 - pl.z);
-      if (d >= minD && d <= maxD) ok.push([x, z]);
+      if (d >= minD && d <= maxD * scale) ok.push(sp);
     }
     const list = ok.length ? ok : reach.length ? reach : this.map.spawns;
     if (!list.length) return null;
-    const [x, z] = G.pick(list);
-    return new THREE.Vector3(x + 0.5, w.standAt(x, z), z + 0.5);
+    const [x, y, z] = G.pick(list);
+    return new THREE.Vector3(x + 0.5, y, z + 0.5);
   }
   spawnEnemy(type, pos) {
     const e = new G.Enemy(this, type, pos);
@@ -384,12 +513,12 @@ G.Game = class {
     if (this.phase !== 'active') return;
     if (this.bossT > 0) { this.bossT -= dt; if (this.bossT <= 0) this.spawnBoss(this.bossArgs[0], this.bossArgs[1]); }
     this.spawnT -= dt;
-    if (this.toSpawn > 0 && this.spawnT <= 0 && this.aliveCount() < this.mods.maxAlive) {
-      this.spawnT = Math.max(0.3, 2.0 - this.wave * 0.08);
+    if (this.toSpawn > 0 && this.spawnT <= 0 && this.aliveCount() < this.maxAlive()) {
+      this.spawnT = this.gameType === 'soldats' ? Math.max(0.8, 2.6 - this.wave * 0.08) : Math.max(0.3, 2.0 - this.wave * 0.08);
       const p = this.pickSpawn();
       if (p) { this.spawnEnemy(this.chooseType(), p); this.toSpawn--; }
     }
-    const bossPending = this.isBossWave(this.wave) && !this.curWave.boss;
+    const bossPending = !!this.curWave.bossPending;
     if (this.toSpawn <= 0 && this.aliveCount() === 0 && !bossPending) this.endWave();
   }
   endWave() {
@@ -473,7 +602,7 @@ G.Game = class {
     if (self) return;
     this.stats.kills++; this.curWave.kills++;
     if (part === 'head') { this.stats.headshots++; this.curWave.hs++; }
-    if (e.type !== 'walker' && e.type !== 'minion') { this.stats.specials++; this.curWave.specials++; }
+    if (!['walker', 'minion', 'rifleman'].includes(e.type)) { this.stats.specials++; this.curWave.specials++; }
     let pts = e.isBoss ? e.T.pts : src === 'melee' ? 130 : part === 'head' ? 100 : e.T.pts;
     if (src === 'nuke') pts = 0;
     if (pts) this.addPoints(pts, part === 'head' ? 'TÊTE' : src === 'melee' ? 'COUTEAU' : null);
@@ -488,7 +617,7 @@ G.Game = class {
       return;
     }
     if (src === 'nuke' || src === 'self') return;
-    const chance = 0.035 * this.mods.drops * (e.type !== 'walker' ? 2 : 1);
+    const chance = (e.soldier ? 0.06 : 0.035) * this.mods.drops * (e.type !== 'walker' && e.type !== 'rifleman' ? 2 : 1);
     if (this.dropsThisWave < 4 && Math.random() < chance) { this.dropsThisWave++; this.spawnPowerup(null, e.pos.clone()); }
   }
   addPoints(n, tag) {
@@ -510,13 +639,13 @@ G.Game = class {
   }
 
   // ---------- Joueur touché ----------
-  damagePlayer(amount, src) {
+  damagePlayer(amount, src, quiet) {
     const pl = this.player;
     if (pl.dead || this.phase === 'over') return;
     pl.hp -= amount; pl.lastHit = this.time;
     this.stats.dmgTaken += amount;
     if (this.curWave) this.curWave.dmgTaken += amount;
-    G.Audio.S.hurt();
+    if (!quiet || Math.random() < 0.15) G.Audio.S.hurt();
     this.shake(Math.min(0.5, amount / 60));
     G.UI.hurt(amount / pl.maxHp);
     if (src && src.pos) {
@@ -547,7 +676,7 @@ G.Game = class {
     if (this.curWave && this.waveStats[this.waveStats.length - 1] !== this.curWave) { this.curWave.t = this.time - this.curWave.t0; this.curWave.died = true; this.waveStats.push(this.curWave); }
     const s = this.stats;
     const run = {
-      mode: this.mode, map: this.map.def.id, mapName: this.map.def.name, rpMult: this.map.def.rpMult,
+      mode: this.mode, gameType: this.gameType, map: this.map.def.id, mapName: this.map.def.name, rpMult: this.map.def.rpMult,
       wave: this.wave, kills: s.kills, headshots: s.headshots, shots: s.shots, hits: s.hits,
       dmgDealt: Math.round(s.dmgDealt), dmgTaken: Math.round(s.dmgTaken), points: s.points, time: Math.round(this.time),
       bosses: s.bosses, specials: s.specials, date: Date.now(),
@@ -562,7 +691,7 @@ G.Game = class {
 
   // ---------- Explosions / effets ----------
   explode(pos, r, dmg, src, color = 0xff8030) {
-    for (const e of this.enemies) {
+    if (src !== 'enemy') for (const e of this.enemies) {
       if (e.dead) continue;
       const c = e.pos.clone(); c.y += 1 * e.size;
       const d = c.distanceTo(pos);
@@ -572,12 +701,12 @@ G.Game = class {
     const pd = pc.distanceTo(pos);
     if (pd < r) {
       const self = src === 'player';
-      const amt = (self ? 0.15 : 1) * (src === 'bloater' ? dmg : dmg * 0.4) * (1 - pd / r * 0.5);
+      const amt = (self ? 0.15 : 1) * (src === 'bloater' || src === 'enemy' ? dmg : dmg * 0.4) * (1 - pd / r * 0.5);
       if (amt > 1) this.damagePlayer(amt, { pos });
     }
     this.boom(pos, color);
     this.shake(G.clamp(1.2 - pd / 20, 0.1, 0.9));
-    G.Audio.S.explosion();
+    G.Audio.S.explosion(pos);
   }
   boom(pos, color) {
     this.boomLight.position.copy(pos); this.boomLight.color.setHex(color); this.boomLight.intensity = 4;
@@ -619,10 +748,9 @@ G.Game = class {
       this.particlesList.push({ mesh: m, vel: new THREE.Vector3(G.rand(-1, 1), G.rand(0, 1.4), G.rand(-1, 1)).multiplyScalar(spd), life: G.rand(0.4, 0.9) });
     }
   }
-  tracer(a, b) {
-    if (!this._tmat) this._tmat = new THREE.LineBasicMaterial({ color: 0xffe0a0, transparent: true, opacity: 0.8 });
+  tracer(a, b, color = 0xffe0a0) {
     const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
-    const l = new THREE.Line(geo, this._tmat.clone()); this.scene.add(l);
+    const l = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8 })); this.scene.add(l);
     this.fx.push({ mesh: l, t: 0, life: 0.06, kind: 'tracer' });
   }
   updateFX(dt) {
@@ -631,8 +759,9 @@ G.Game = class {
       const p = this.particlesList[i];
       p.life -= dt;
       if (p.life <= 0) { this.scene.remove(p.mesh); this.particlesList.splice(i, 1); continue; }
-      p.vel.y -= 18 * dt;
+      if (!p.noGrav) p.vel.y -= 18 * dt;
       const m = p.mesh;
+      if (p.grow) m.scale.multiplyScalar(1 + p.grow * dt);
       const nx = m.position.x + p.vel.x * dt, ny = m.position.y + p.vel.y * dt, nz = m.position.z + p.vel.z * dt;
       if (w.isSolid(Math.floor(nx), Math.floor(ny), Math.floor(nz))) { p.vel.multiplyScalar(0.3); p.vel.y = 0; }
       else m.position.set(nx, ny, nz);
@@ -651,6 +780,7 @@ G.Game = class {
       else if (f.kind === 'tracer') f.mesh.material.opacity = 0.8 * (1 - k);
       else if (f.kind === 'acid') {
         f.mesh.material.opacity = 0.6 * (1 - k * k);
+        if (f.fire && Math.random() < 0.3) this.particles(f.mesh.position.clone().add(new THREE.Vector3(G.rand(-1, 1), 0.1, G.rand(-1, 1))), 0xff8020, 1, 1.5, 0.12);
         f.tick -= dt;
         const pl = this.player;
         if (f.tick <= 0 && Math.hypot(pl.pos.x - f.mesh.position.x, pl.pos.z - f.mesh.position.z) < 1.3 && Math.abs(pl.pos.y - f.mesh.position.y) < 1) { f.tick = 0.5; this.damagePlayer(f.dmg, null); }
@@ -664,10 +794,10 @@ G.Game = class {
     if (type === 'spit') mesh = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 0.25), new THREE.MeshBasicMaterial({ color: 0x80ff40 }));
     else if (type === 'orb') mesh = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), new THREE.MeshBasicMaterial({ color: 0xb050ff }));
     else if (type === 'energy') mesh = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.5), new THREE.MeshBasicMaterial({ color: extra.up ? 0xff60ff : 0x60ffb0 }));
-    else mesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshLambertMaterial({ color: 0x3a4a2a }));
+    else mesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshLambertMaterial({ color: type === 'egrenade' ? 0x5a3a2a : 0x3a4a2a }));
     mesh.position.copy(pos);
     this.scene.add(mesh);
-    this.projectiles.push(Object.assign({ type, pos: pos.clone(), vel: vel.clone(), dmg, owner, mesh, life: type === 'grenade' ? 2.2 : 6 }, extra));
+    this.projectiles.push(Object.assign({ type, pos: pos.clone(), vel: vel.clone(), dmg, owner, mesh, life: type === 'grenade' || type === 'egrenade' ? 2.2 : 6 }, extra));
   }
   updateProjectiles(dt) {
     const w = this.world, pl = this.player;
@@ -676,16 +806,17 @@ G.Game = class {
       p.life -= dt;
       let done = p.life <= 0;
       if (p.type === 'grenade' && done) { this.explode(p.pos.clone(), 4.5, p.dmg, 'player', 0xff8030); }
+      if (p.type === 'egrenade' && done) { this.explode(p.pos.clone(), 4.5, p.dmg, 'enemy', 0xff8030); }
       if (!done) {
         const steps = Math.ceil(p.vel.length() * dt / 0.3);
         const sdt = dt / steps;
         for (let s = 0; s < steps && !done; s++) {
           if (p.type === 'spit') p.vel.y -= 18 * sdt;
-          if (p.type === 'grenade') p.vel.y -= 20 * sdt;
+          if (p.type === 'grenade' || p.type === 'egrenade') p.vel.y -= 20 * sdt;
           if (p.type === 'orb') { const to = pl.eye.clone().sub(p.pos).normalize().multiplyScalar(9); p.vel.lerp(to, Math.min(1, sdt * 0.9)); }
           const np = p.pos.clone().addScaledVector(p.vel, sdt);
           const solid = w.isSolid(Math.floor(np.x), Math.floor(np.y), Math.floor(np.z));
-          if (p.type === 'grenade') {
+          if (p.type === 'grenade' || p.type === 'egrenade') {
             if (solid) {
               // rebond simple
               if (w.isSolid(Math.floor(np.x), Math.floor(p.pos.y), Math.floor(p.pos.z))) p.vel.x *= -0.4;
@@ -726,13 +857,67 @@ G.Game = class {
       else p.mesh.rotation.x += dt * 8;
     }
   }
-  acidPuddle(pos, dmg) {
+  acidPuddle(pos, dmg, color, life = 4) {
     const w = this.world;
-    const y = w.standAt(Math.floor(pos.x), Math.floor(pos.z));
-    const m = new THREE.Mesh(new THREE.CircleGeometry(1.3, 16), new THREE.MeshBasicMaterial({ color: 0x70e030, transparent: true, opacity: 0.6, depthWrite: false }));
+    const y = w.standBelow(Math.floor(pos.x), pos.y + 0.5, Math.floor(pos.z));
+    const m = new THREE.Mesh(new THREE.CircleGeometry(1.3, 16), new THREE.MeshBasicMaterial({ color: color || 0x70e030, transparent: true, opacity: 0.6, depthWrite: false }));
     m.rotation.x = -Math.PI / 2; m.position.set(pos.x, (y < 999 ? y : pos.y) + 0.05, pos.z);
     this.scene.add(m);
-    this.fx.push({ mesh: m, t: 0, life: 4, kind: 'acid', dmg: Math.max(4, dmg), tick: 0 });
+    this.fx.push({ mesh: m, t: 0, life, kind: 'acid', dmg: Math.max(4, dmg), tick: 0, fire: !!color });
+  }
+  // ---------- Soldats ----------
+  enemyShot(e, from, hits, dmg, sound) {
+    const pl = this.player;
+    G.Audio.S.shotAt(sound, from);
+    this.flashLight.position.copy(from); this.flashLight.intensity = Math.max(this.flashLight.intensity, 1.5);
+    if (!this._mflash) this._mflash = new THREE.MeshBasicMaterial({ color: 0xffd070, transparent: true, opacity: 0.9, depthWrite: false });
+    const fl = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), this._mflash.clone()); fl.position.copy(from); this.scene.add(fl);
+    this.fx.push({ mesh: fl, t: 0, life: 0.05, kind: 'tracer' });
+    const target = pl.eye.clone(); target.y -= 0.3;
+    if (hits > 0 && this.world.lineOfSight(from, pl.eye)) {
+      this.tracer(from, target, 0xffb060);
+      this.damagePlayer(dmg, e);
+    } else {
+      const miss = target.clone().add(new THREE.Vector3(G.rand(-1, 1), G.rand(-0.6, 1), G.rand(-1, 1)).multiplyScalar(1.4));
+      const dir = miss.clone().sub(from).normalize();
+      const wh = this.world.raycast(from.x, from.y, from.z, dir.x, dir.y, dir.z, 80);
+      const end = from.clone().addScaledVector(dir, wh ? wh.dist : 60);
+      this.tracer(from, end, 0xffb060);
+      if (wh) this.particles(end, 0x9a9080, 2, 2, 0.05);
+      if (from.distanceTo(target) > 4 && Math.random() < 0.5) G.Audio.S.whizz();
+    }
+  }
+  scream(e) {
+    const pl = this.player;
+    G.Audio.S.scream();
+    if (this.world.lineOfSight(e.headPos(), pl.eye) && e.pos.distanceTo(pl.pos) < 18) {
+      pl.slowT = 2.2; this.warpT = 2.2; this.shake(0.4);
+      this.message('', 'Le cri vous paralyse !', 1.5, '#60c0ff');
+    }
+    for (const o of this.enemies) if (!o.dead && o !== e && o.pos.distanceTo(e.pos) < 14) { o.buffT = 6; this.particles(o.headPos(), 0x60c0ff, 3, 1.5); }
+    const m = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 32), new THREE.MeshBasicMaterial({ color: 0x60c0ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
+    m.position.copy(e.headPos()); m.lookAt(pl.eye); this.scene.add(m);
+    this.fx.push({ mesh: m, t: 0, life: 0.6, kind: 'ring', r: 10 });
+  }
+  flame(e, from, to) {
+    const dir = to.clone().sub(from).normalize();
+    if (!this._fmats) this._fmats = [0xff8020, 0xffc040, 0xff4010].map((c) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.8, depthWrite: false }));
+    if (!this._pgeo) { this._pgeo = new THREE.BoxGeometry(1, 1, 1); this._pmats = {}; }
+    for (let i = 0; i < 4; i++) {
+      const m = new THREE.Mesh(this._pgeo, G.pick(this._fmats)); m.scale.setScalar(G.rand(0.2, 0.45));
+      m.position.copy(from);
+      this.scene.add(m);
+      const v = dir.clone().multiplyScalar(G.rand(9, 13)).add(new THREE.Vector3(G.rand(-1, 1), G.rand(-0.5, 1.5), G.rand(-1, 1)));
+      this.particlesList.push({ mesh: m, vel: v, life: 0.55, noGrav: true, grow: 2.2 });
+    }
+    if (Math.random() < 0.3) G.Audio.S.flame(from);
+  }
+  fireZone(pos, dmg) {
+    for (let i = 0; i < 3; i++) {
+      const p = pos.clone().add(new THREE.Vector3(G.rand(-2, 2), 0, G.rand(-2, 2)));
+      this.acidPuddle(p, dmg, 0xff6a10, 5);
+    }
+    this.telegraph(pos.clone(), 3, 0.6);
   }
 
   // ---------- Bonus ----------
@@ -748,7 +933,7 @@ G.Game = class {
     g.add(core);
     const icon = this.makeIconSprite(P.icon, '#' + P.color.toString(16).padStart(6, '0'));
     icon.scale.set(0.8, 0.8, 1); icon.position.y = 0.8; g.add(icon);
-    const y = this.world.standAt(Math.floor(pos.x), Math.floor(pos.z));
+    const y = this.world.standBelow(Math.floor(pos.x), pos.y + 0.5, Math.floor(pos.z));
     g.position.set(pos.x, (y < 999 ? y : pos.y) + 0.8, pos.z);
     this.scene.add(g);
     this.powerups.push({ type, g, t: 0, life: 25 });
@@ -885,7 +1070,7 @@ G.Game = class {
               b.state = 'ready'; b.t = 0;
             } else b.weapon = pick.id;
             this.clearBoxModel(s);
-            b.model = G.makeWeaponModel(b.weapon, false); b.model.scale.setScalar(1.6); b.model.position.y = 1.4; s.group.add(b.model);
+            b.model = G.makeWeaponModel(b.weapon, false, true); b.model.scale.setScalar(1.3); b.model.position.y = 1.4; s.group.add(b.model);
           }
           if (b.model) b.model.position.y = 1.1 + Math.min(1, b.t / 2.4) * 0.5;
         } else if (b.state === 'ready') {

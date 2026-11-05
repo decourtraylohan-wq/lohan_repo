@@ -1,14 +1,18 @@
-// Monde voxel : stockage, maillage (avec occlusion ambiante), lancer de rayons, collisions, navigation
+// Monde voxel : stockage, maillage (occlusion ambiante, plantes en croix), lancer de rayons, collisions, navigation 3D
 G.B = {
   AIR: 0, GRASS: 1, DIRT: 2, STONE: 3, COBBLE: 4, LOG: 5, PLANKS: 6, LEAVES: 7, SAND: 8, SANDSTONE: 9,
   SNOW: 10, ICE: 11, BRICK: 12, BASALT: 13, OBSIDIAN: 14, LAVA: 15, WATER: 16, GLOW: 17, CACTUS: 18, PINE: 19,
   METAL: 20, GRAVEL: 21, BEDROCK: 22, DARKBRICK: 23, CRATE: 24, HAY: 25, STONEBRICK: 26, MOSSY: 27, MAGMA: 28, REDSAND: 29,
+  FLOWER_R: 30, FLOWER_Y: 31, TALLGRASS: 32, WHEAT: 33, DEADBUSH: 34, FARMLAND: 35, PATH: 36,
+  ASPHALT: 37, ASPHALT_LINE: 38, SIDEWALK: 39, CONCRETE: 40, CONCRETE_DARK: 41, GLASS: 42, SEWER: 43, ROOF: 44, GRATE: 45,
+  CAR_RED: 46, CAR_BLUE: 47, CAR_WHITE: 48, AWNING: 49, WHITEWALL: 50, TIRE: 51, BOOKSHELF: 52, SNOWGRASS: 53, CLAY: 54,
 };
 
 G.BLOCKS = (function () {
   const B = G.B;
   const d = [];
-  const def = (id, top, side, bottom, opts = {}) => { d[id] = Object.assign({ top, side: side || top, bottom: bottom || top, solid: true, opaque: true, liquid: false, bright: false, bulletPass: false }, opts); };
+  const def = (id, top, side, bottom, opts = {}) => { d[id] = Object.assign({ top, side: side || top, bottom: bottom || top, solid: true, opaque: true, liquid: false, bright: false, bulletPass: false, plant: false }, opts); };
+  const plant = { solid: false, opaque: false, bulletPass: true, plant: true };
   def(B.GRASS, 'grass_top', 'grass_side', 'dirt');
   def(B.DIRT, 'dirt');
   def(B.STONE, 'stone');
@@ -38,6 +42,31 @@ G.BLOCKS = (function () {
   def(B.MOSSY, 'mossy');
   def(B.MAGMA, 'magma', null, null, { bright: true });
   def(B.REDSAND, 'redsand');
+  def(B.FLOWER_R, 'flower_red', null, null, plant);
+  def(B.FLOWER_Y, 'flower_yellow', null, null, plant);
+  def(B.TALLGRASS, 'tallgrass', null, null, plant);
+  def(B.WHEAT, 'wheat', null, null, plant);
+  def(B.DEADBUSH, 'deadbush', null, null, plant);
+  def(B.FARMLAND, 'farmland', 'dirt', 'dirt');
+  def(B.PATH, 'dirtpath', 'dirt', 'dirt');
+  def(B.ASPHALT, 'asphalt');
+  def(B.ASPHALT_LINE, 'asphalt_line', 'asphalt', 'asphalt');
+  def(B.SIDEWALK, 'sidewalk', 'concrete', 'concrete');
+  def(B.CONCRETE, 'concrete');
+  def(B.CONCRETE_DARK, 'concrete_dark');
+  def(B.GLASS, 'glass', null, null, { opaque: false, bulletPass: true });
+  def(B.SEWER, 'sewer');
+  def(B.ROOF, 'roof');
+  def(B.GRATE, 'grate', null, null, { opaque: false });
+  def(B.CAR_RED, 'car_red');
+  def(B.CAR_BLUE, 'car_blue');
+  def(B.CAR_WHITE, 'car_white');
+  def(B.AWNING, 'awning');
+  def(B.WHITEWALL, 'whitewall');
+  def(B.TIRE, 'tire');
+  def(B.BOOKSHELF, 'planks', 'bookshelf', 'planks');
+  def(B.SNOWGRASS, 'snowgrass', 'snow_side', 'dirt');
+  def(B.CLAY, 'clay');
   return d;
 })();
 
@@ -46,8 +75,6 @@ G.World = class {
     this.W = W; this.H = H; this.D = D;
     this.data = new Uint8Array(W * H * D);
     this.stand = new Int16Array(W * D);
-    this.hazard = new Uint8Array(W * D);
-    this.dist = new Int16Array(W * D);
     this.meshes = [];
   }
   idx(x, y, z) { return (y * this.D + z) * this.W + x; }
@@ -59,7 +86,6 @@ G.World = class {
       for (let z = Math.min(z0, z1); z <= Math.max(z0, z1); z++)
         for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) this.set(x, y, z, b);
   }
-  // hauteur du terrain (premier bloc solide en partant du haut)
   top(x, z) {
     for (let y = this.H - 1; y >= 0; y--) { const b = this.get(x, y, z); if (b && G.BLOCKS[b].solid) return y; }
     return -1;
@@ -72,9 +98,10 @@ G.World = class {
     return b !== 0 && G.BLOCKS[b].solid;
   }
   blockAt(x, y, z) { return this.get(Math.floor(x), Math.floor(y), Math.floor(z)); }
+  canStand(x, y, z) { return y >= 1 && this.isSolid(x, y - 1, z) && !this.isSolid(x, y, z) && !this.isSolid(x, y + 1, z); }
 
   // ---------- Maillage ----------
-  buildMesh(scene) {
+  buildMesh(scene, shadows) {
     const FACES = [
       { n: [1, 0, 0], t: 'side', v: [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]] },
       { n: [-1, 0, 0], t: 'side', v: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] },
@@ -83,16 +110,18 @@ G.World = class {
       { n: [0, 0, 1], t: 'side', v: [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]] },
       { n: [0, 0, -1], t: 'side', v: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]] },
     ];
-    const AO = [0.42, 0.62, 0.8, 1.0];
+    const AO = [0.4, 0.6, 0.8, 1.0];
     const groups = { opaque: this._newGroup(), bright: this._newGroup(), water: this._newGroup() };
     const occ = (x, y, z) => { const b = this.get(x, y, z); return b !== 0 && G.BLOCKS[b].opaque ? 1 : 0; };
     const uvCache = {};
     const getUV = (name) => uvCache[name] || (uvCache[name] = G.Tex.uv(name));
+    const rnd = G.mulberry32(5);
 
     for (let y = 0; y < this.H; y++) for (let z = 0; z < this.D; z++) for (let x = 0; x < this.W; x++) {
       const b = this.data[this.idx(x, y, z)];
       if (!b) continue;
       const def = G.BLOCKS[b];
+      if (def.plant) { this._plant(groups.opaque, x, y, z, getUV(def.top), rnd); continue; }
       const grp = def.liquid ? (def.bright ? groups.bright : groups.water) : (def.bright ? groups.bright : groups.opaque);
       for (let f = 0; f < 6; f++) {
         const F = FACES[f];
@@ -102,12 +131,11 @@ G.World = class {
           const nd = G.BLOCKS[nb];
           if (nd.opaque) continue;
           if (nb === b) continue;
-          if (def.liquid && !nd.liquid) continue; // un liquide n'affiche pas ses faces contre un solide
+          if (def.liquid && !nd.liquid && !nd.plant) continue;
         }
         if (F.n[1] === -1 && y === 0) continue;
         const [u0, v0, u1, v1] = getUV(def[F.t]);
         const uvs = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
-        // axes tangents
         const a = F.n[0] ? 0 : F.n[1] ? 1 : 2;
         const t1 = (a + 1) % 3, t2 = (a + 2) % 3;
         const aos = [];
@@ -139,7 +167,7 @@ G.World = class {
       }
     }
 
-    const mk = (g, mat) => {
+    const mk = (g, mat, cast) => {
       if (!g.idx.length) return;
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3));
@@ -150,14 +178,35 @@ G.World = class {
       geo.computeBoundingSphere();
       const m = new THREE.Mesh(geo, mat);
       m.matrixAutoUpdate = false;
+      if (shadows) { m.castShadow = cast; m.receiveShadow = true; }
       scene.add(m);
       this.meshes.push(m);
       return m;
     };
-    mk(groups.opaque, new THREE.MeshLambertMaterial({ map: G.Tex.atlas, vertexColors: true, alphaTest: 0.5 }));
-    mk(groups.bright, new THREE.MeshBasicMaterial({ map: G.Tex.atlas, vertexColors: true }));
-    const wm = mk(groups.water, new THREE.MeshLambertMaterial({ map: G.Tex.atlas, vertexColors: true, transparent: true, opacity: 0.7, depthWrite: false }));
+    mk(groups.opaque, new THREE.MeshLambertMaterial({ map: G.Tex.atlas, vertexColors: true, alphaTest: 0.5, side: THREE.FrontSide }), true);
+    mk(groups.bright, new THREE.MeshBasicMaterial({ map: G.Tex.atlas, vertexColors: true }), false);
+    const wm = mk(groups.water, new THREE.MeshLambertMaterial({ map: G.Tex.atlas, vertexColors: true, transparent: true, opacity: 0.72, depthWrite: false }), false);
     if (wm) wm.renderOrder = 2;
+  }
+  _plant(g, x, y, z, uvr, rnd) {
+    const [u0, v0, u1, v1] = uvr;
+    const ox = (rnd() - 0.5) * 0.3, oz = (rnd() - 0.5) * 0.3;
+    const quads = [[[0.15, 0.15], [0.85, 0.85]], [[0.85, 0.15], [0.15, 0.85]]];
+    for (const [[ax, az], [bx, bz]] of quads) {
+      for (const flip of [false, true]) {
+        const base = g.pos.length / 3;
+        const p = [[ax, 0, az], [bx, 0, bz], [bx, 0.9, bz], [ax, 0.9, az]];
+        if (flip) p.reverse();
+        const uv = flip ? [[u0, v1], [u1, v1], [u1, v0], [u0, v0]] : [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+        for (let i = 0; i < 4; i++) {
+          g.pos.push(x + p[i][0] + ox, y + p[i][1], z + p[i][2] + oz);
+          g.nor.push(0, 1, 0);
+          g.uv.push(uv[i][0], uv[i][1]);
+          const l = p[i][1] > 0 ? 1 : 0.7; g.col.push(l, l, l);
+        }
+        g.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      }
+    }
   }
   _newGroup() { return { pos: [], nor: [], uv: [], col: [], idx: [] }; }
   dispose(scene) {
@@ -188,12 +237,10 @@ G.World = class {
     const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
     const L = Math.hypot(dx, dy, dz);
     if (L < 0.01) return true;
-    const h = this.raycast(a.x, a.y, a.z, dx / L, dy / L, dz / L, L);
-    return !h;
+    return !this.raycast(a.x, a.y, a.z, dx / L, dy / L, dz / L, L);
   }
 
   // ---------- Collisions AABB ----------
-  // e : {pos (pieds), vel, w, h, onGround}
   collides(px, py, pz, hw, h) {
     const x0 = Math.floor(px - hw), x1 = Math.floor(px + hw - 1e-6);
     const y0 = Math.floor(py), y1 = Math.floor(py + h - 1e-6);
@@ -204,7 +251,6 @@ G.World = class {
   moveEntity(e, dt, stepUp = true) {
     const hw = e.w / 2, h = e.h;
     const p = e.pos;
-    // axe Y
     let ny = p.y + e.vel.y * dt;
     e.onGround = false;
     if (this.collides(p.x, ny, p.z, hw, h)) {
@@ -213,7 +259,6 @@ G.World = class {
       e.vel.y = 0;
     }
     p.y = ny;
-    // axes X et Z avec montée automatique d'une marche (zombies)
     for (const ax of ['x', 'z']) {
       const v = e.vel[ax] * dt;
       if (!v) continue;
@@ -226,69 +271,112 @@ G.World = class {
     }
   }
 
-  // ---------- Navigation (champ de flux vers le joueur) ----------
-  buildNav() {
-    const { W, D } = this;
+  // ---------- Navigation 3D (graphe des cases où l'on peut se tenir) ----------
+  standAt(x, z) {
+    if (x < 0 || z < 0 || x >= this.W || z >= this.D) return 999;
+    return this.stand[z * this.W + x];
+  }
+  // case debout la plus haute sous (ou au niveau de) y
+  standBelow(x, y, z) {
+    for (let yy = Math.min(this.H - 2, Math.floor(y + 0.6)); yy >= 1; yy--) if (this.canStand(x, yy, z)) return yy;
+    return 999;
+  }
+  buildNav(blockedCells = []) {
+    const { W, H, D } = this;
     for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
       let s = 999;
-      for (let y = 1; y < this.H - 1; y++) {
-        if (this.isSolid(x, y - 1, z) && !this.isSolid(x, y, z) && !this.isSolid(x, y + 1, z)) { s = y; break; }
-      }
+      for (let y = 1; y < H - 1; y++) if (this.canStand(x, y, z)) { s = y; break; }
       this.stand[z * W + x] = s;
-      const b = this.get(x, s, z), bb = this.get(x, s - 1, z);
-      this.hazard[z * W + x] = (b === G.B.LAVA || bb === G.B.LAVA || b === G.B.CACTUS) ? 1 : 0;
-      // les cactus bloquent
     }
-    this.dist.fill(-1);
-    this._queue = new Int32Array(W * D);
-  }
-  standAt(x, z) { if (x < 0 || z < 0 || x >= this.W || z >= this.D) return 999; return this.stand[z * this.W + x]; }
-  canStep(ax, az, bx, bz) {
-    if (bx < 0 || bz < 0 || bx >= this.W || bz >= this.D) return false;
-    const hb = this.stand[bz * this.W + bx];
-    if (hb >= 999 || this.hazard[bz * this.W + bx]) return false;
-    const ha = this.stand[az * this.W + ax];
-    return hb - ha <= 1;
-  }
-  computeFlow(tx, tz) {
-    const { W, D } = this;
-    tx = G.clamp(tx, 0, W - 1); tz = G.clamp(tz, 0, D - 1);
-    const dist = this.dist; dist.fill(-1);
-    const q = this._queue; let qh = 0, qt = 0;
-    dist[tz * W + tx] = 0; q[qt++] = tz * W + tx;
+    const blocked = new Set(blockedCells.map(([x, z]) => z * W + x));
+    const nodeAt = new Int32Array(W * H * D).fill(-1);
+    const nx = [], ny = [], nz = [];
+    for (let y = 1; y < H - 1; y++) for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+      if (!this.canStand(x, y, z)) continue;
+      if (blocked.has(z * W + x)) continue;
+      const b = this.get(x, y, z), bb = this.get(x, y - 1, z);
+      if (b === G.B.LAVA || bb === G.B.LAVA || bb === G.B.CACTUS) continue;
+      nodeAt[this.idx(x, y, z)] = nx.length;
+      nx.push(x); ny.push(y); nz.push(z);
+    }
+    const N = nx.length;
     const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-    while (qh < qt) {
-      const c = q[qh++]; const cx = c % W, cz = (c / W) | 0; const cd = dist[c];
+    const outStart = new Int32Array(N + 1), outList = [];
+    const findDest = (x, y, z, tx, tz) => {
+      // monte d'un bloc, reste au niveau ou descend jusqu'à 4 blocs
+      if (tx < 0 || tz < 0 || tx >= W || tz >= D) return -1;
+      if (!this.isSolid(x, y + 2, z)) { const id = nodeAt[this.idx(tx, y + 1, tz)] ; if (id >= 0 && y + 1 < H) return id; }
+      for (let yy = y; yy >= Math.max(1, y - 4); yy--) {
+        if (yy < y && (this.isSolid(tx, yy + 2, tz))) return -1;
+        const id = nodeAt[this.idx(tx, yy, tz)];
+        if (id >= 0) return id;
+        if (this.isSolid(tx, yy, tz) || this.isSolid(tx, yy + 1, tz)) return -1;
+      }
+      return -1;
+    };
+    for (let i = 0; i < N; i++) {
+      outStart[i] = outList.length;
+      const x = nx[i], y = ny[i], z = nz[i];
       for (const [dx, dz] of dirs) {
-        const ax = cx + dx, az = cz + dz;
-        if (ax < 0 || az < 0 || ax >= W || az >= D) continue;
-        const ai = az * W + ax;
-        if (dist[ai] !== -1) continue;
-        if (this.stand[ai] >= 999) continue;
-        // on remonte : le zombie en A doit pouvoir aller en C
-        if (!this.canStep(ax, az, cx, cz)) continue;
-        if (dx && dz && (!this.canStep(ax, az, cx, az) || !this.canStep(ax, az, ax, cz))) continue;
-        dist[ai] = cd + 1; q[qt++] = ai;
+        if (dx && dz) {
+          // diagonale : les deux cases orthogonales doivent être libres
+          if (this.isSolid(x + dx, y, z) || this.isSolid(x + dx, y + 1, z) || this.isSolid(x, y, z + dz) || this.isSolid(x, y + 1, z + dz)) continue;
+        }
+        const id = findDest(x, y, z, x + dx, z + dz);
+        if (id >= 0) outList.push(id);
+      }
+    }
+    outStart[N] = outList.length;
+    // arêtes inverses pour le BFS depuis le joueur
+    const inCount = new Int32Array(N + 1);
+    for (const t of outList) inCount[t + 1]++;
+    for (let i = 0; i < N; i++) inCount[i + 1] += inCount[i];
+    const inList = new Int32Array(outList.length), fillPos = inCount.slice();
+    for (let i = 0; i < N; i++) for (let k = outStart[i]; k < outStart[i + 1]; k++) inList[fillPos[outList[k]]++] = i;
+    this.nav = { N, nodeAt, nx: Int16Array.from(nx), ny: Int16Array.from(ny), nz: Int16Array.from(nz), outStart, outList: Int32Array.from(outList), inStart: inCount, inList, dist: new Int32Array(N).fill(-1), queue: new Int32Array(N) };
+  }
+  // nœud le plus proche d'une position (on cherche sous les pieds)
+  nodeNear(x, y, z) {
+    const n = this.nav; if (!n) return -1;
+    const fx = Math.floor(x), fz = Math.floor(z);
+    if (fx < 0 || fz < 0 || fx >= this.W || fz >= this.D) return -1;
+    const fy = Math.floor(y + 0.05);
+    for (let yy = Math.min(this.H - 2, fy + 1); yy >= Math.max(1, fy - 8); yy--) {
+      const id = n.nodeAt[this.idx(fx, yy, fz)];
+      if (id >= 0) return id;
+    }
+    return -1;
+  }
+  computeFlow(x, y, z) {
+    const n = this.nav; if (!n) return;
+    n.dist.fill(-1);
+    let start = this.nodeNear(x, y, z);
+    if (start < 0) {
+      // le joueur est sur une case non répertoriée : on cherche un voisin
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) { start = this.nodeNear(x + dx, y, z + dz); if (start >= 0) break; }
+      if (start < 0) return;
+    }
+    const q = n.queue; let qh = 0, qt = 0;
+    n.dist[start] = 0; q[qt++] = start;
+    while (qh < qt) {
+      const c = q[qh++], cd = n.dist[c] + 1;
+      for (let k = n.inStart[c]; k < n.inStart[c + 1]; k++) {
+        const a = n.inList[k];
+        if (n.dist[a] !== -1) continue;
+        n.dist[a] = cd; q[qt++] = a;
       }
     }
   }
-  // meilleure case voisine pour avancer vers le joueur
-  nextStep(x, z) {
-    const { W, D } = this;
-    if (x < 0 || z < 0 || x >= W || z >= D) return null;
-    const here = this.dist[z * W + x];
-    let best = null, bd = here < 0 ? 1e9 : here;
-    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-    for (const [dx, dz] of dirs) {
-      const bx = x + dx, bz = z + dz;
-      if (bx < 0 || bz < 0 || bx >= W || bz >= D) continue;
-      const d = this.dist[bz * W + bx];
-      if (d < 0 || d >= bd) continue;
-      if (!this.canStep(x, z, bx, bz)) continue;
-      if (dx && dz && (!this.canStep(x, z, bx, z) || !this.canStep(x, z, x, bz))) continue;
-      bd = d; best = [bx, bz];
+  flowDistAt(x, y, z) { const id = this.nodeNear(x, y, z); return id < 0 ? -1 : this.nav.dist[id]; }
+  nextStep(x, y, z) {
+    const n = this.nav; const id = this.nodeNear(x, y, z);
+    if (id < 0) return null;
+    let best = -1, bd = n.dist[id] < 0 ? 1e9 : n.dist[id];
+    for (let k = n.outStart[id]; k < n.outStart[id + 1]; k++) {
+      const t = n.outList[k], d = n.dist[t];
+      if (d >= 0 && d < bd) { bd = d; best = t; }
     }
-    return best;
+    if (best < 0) return null;
+    return [n.nx[best], n.ny[best], n.nz[best]];
   }
-  flowDist(x, z) { if (x < 0 || z < 0 || x >= this.W || z >= this.D) return -1; return this.dist[z * this.W + x]; }
 };

@@ -82,7 +82,8 @@ G.Ranked = (function () {
     const c = P.career;
     c.runs++; c.kills += run.kills; c.headshots += run.headshots; c.shots += run.shots; c.hits += run.hits;
     c.dmgDealt += run.dmgDealt; c.dmgTaken += run.dmgTaken; c.points += run.points; c.time += run.time; c.bosses += run.bosses; c.specials += run.specials || 0;
-    c.bestWave[run.map] = Math.max(c.bestWave[run.map] || 0, run.wave);
+    const bk = run.map + (run.gameType === 'soldats' ? ':s' : '');
+    c.bestWave[bk] = Math.max(c.bestWave[bk] || 0, run.wave);
     run.rpBefore = before; run.rpDelta = delta; run.rankLabel = infoBefore.label; run.id = Date.now();
     P.runs.unshift(run);
     if (P.runs.length > 60) P.runs.length = 60;

@@ -52,10 +52,10 @@ button.danger { color: var(--bad); }
 
 /* sélection de partie */
 .modes { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
-.mode { flex: 1; min-width: 220px; background: rgba(255,255,255,0.05); border: 2px solid var(--line); padding: 14px 18px; border-radius: 8px; text-align: left; display: flex; flex-direction: column; gap: 4px; }
-.mode b { font-size: 20px; text-transform: uppercase; }
-.mode small { color: var(--muted); }
-.mode.active { border-color: var(--accent); background: rgba(217,58,43,0.12); }
+.mode, .gtype { flex: 1; min-width: 220px; background: rgba(255,255,255,0.05); border: 2px solid var(--line); padding: 14px 18px; border-radius: 8px; text-align: left; display: flex; flex-direction: column; gap: 4px; }
+.mode b, .gtype b { font-size: 20px; text-transform: uppercase; }
+.mode small, .gtype small { color: var(--muted); }
+.mode.active, .gtype.active { border-color: var(--accent); background: rgba(217,58,43,0.12); }
 .maps { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; margin-bottom: 20px; }
 .mapcard { background: rgba(255,255,255,0.05); border: 2px solid var(--line); border-radius: 8px; padding: 0; text-align: left; overflow: hidden; }
 .mapcard.active { border-color: var(--accent2); }

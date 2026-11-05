@@ -34,7 +34,7 @@ G.Player = class {
     this.fireCD = 0; this.reloadT = 0; this.ads = 0; this.switchT = 0;
     this.meleeCD = 0; this.meleeT = 0; this.grenades = 2; this.grenadeCD = 0;
     this.recoil = 0; this.bob = 0; this.triggerHeld = false;
-    this.lavaT = 0;
+    this.lavaT = 0; this.slowT = 0;
     this.setViewWeapon();
   }
   newSlot(id, up = false) { const s = up ? G.upgradeStats(id) : G.WEAPONS[id]; return { id, up, mag: s.mag, reserve: s.reserve }; }
@@ -56,19 +56,18 @@ G.Player = class {
   buildViewModel() {
     this.vmScene = new THREE.Scene();
     this.vmCam = new THREE.PerspectiveCamera(65, 1, 0.01, 10);
-    this.vmScene.add(new THREE.HemisphereLight(0xffffff, 0x404040, 1.0));
-    const dl = new THREE.DirectionalLight(0xffffff, 0.6); dl.position.set(1, 2, 1); this.vmScene.add(dl);
+    this.vmScene.add(new THREE.HemisphereLight(0xffffff, 0x50505a, 2.0));
+    const dl = new THREE.DirectionalLight(0xfff4e8, 1.6); dl.position.set(1, 2, 1.5); this.vmScene.add(dl);
     this.vmRoot = new THREE.Group();
     this.vmRoot.scale.setScalar(0.6);
+    this.shells = [];
+    this.sway = new THREE.Vector2();
     this.vmScene.add(this.vmRoot);
     // bras
     const arm = new THREE.MeshLambertMaterial({ color: 0x5a6a48 });
     const hand = new THREE.MeshLambertMaterial({ color: 0xd8a880 });
-    this.vmHands = new THREE.Group();
-    const a1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.22), arm); a1.position.set(0.02, -0.14, 0.12); a1.rotation.x = 0.35; this.vmHands.add(a1);
-    const h1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.08), hand); h1.position.set(0, -0.09, 0.0); this.vmHands.add(h1);
-    const a2 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.26), arm); a2.position.set(-0.1, -0.08, -0.1); a2.rotation.y = 0.6; this.vmHands.add(a2);
-    this.vmRoot.add(this.vmHands);
+    this.armMat = arm; this.handMat = hand;
+    const glove = new THREE.MeshLambertMaterial({ color: 0x2a2a2a }); this.gloveMat = glove;
     // flash du canon
     const fm = new THREE.MeshBasicMaterial({ color: 0xffd070, transparent: true, opacity: 0.95, depthWrite: false });
     this.flash = new THREE.Group();
@@ -87,11 +86,23 @@ G.Player = class {
     if (this.vmGun) { this.vmRoot.remove(this.vmGun); this.vmGun.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
     this.vmGun = G.makeWeaponModel(this.slot.id, this.slot.up);
     this.vmRoot.add(this.vmGun);
+    // mains et manches attachées à l'arme
+    const U = this.vmGun.userData, id = this.slot.id;
+    const mk = (sx, sy, sz, m, x, y, z, rx = 0, ry = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, y, z); b.rotation.set(rx, ry, 0); this.vmGun.add(b); return b; };
+    mk(0.05, 0.07, 0.08, this.gloveMat, 0.0, -0.05, 0.04, 0.3);
+    mk(0.075, 0.075, 0.3, this.armMat, 0.03, -0.12, 0.22, 0.45, 0.1);
+    const short = id === 'pistol' || id === 'magnum';
+    const lz = short ? 0.03 : id === 'shotgun' ? (U.pumpBase ? U.pumpBase.z : -0.3) : id === 'sniper' ? -0.3 : id === 'lmg' ? -0.32 : -0.3;
+    const left = mk(0.05, 0.06, 0.08, this.gloveMat, short ? -0.025 : -0.005, short ? -0.08 : -0.025, lz, 0.2);
+    const larm = mk(0.075, 0.075, 0.34, this.armMat, short ? -0.06 : -0.08, short ? -0.14 : -0.1, lz + 0.18, 0.4, -0.45);
+    if (U.pump) { this.vmGun.remove(left); U.pump.add(left); left.position.set(0, -0.03, 0); this.vmGun.remove(larm); U.pump.add(larm); larm.position.set(-0.07, -0.08, 0.18); }
+    this.vmGun.position.set(0, 0, 0);
     this.flash.position.copy(this.vmGun.userData.muzzle);
+    this.boltT = 0; this.pumpT = 0;
     this.vmGun.add(this.flash);
   }
 
-  onMouseMove(dx, dy) { this.lookDX += dx; this.lookDY += dy; }
+  onMouseMove(dx, dy) { this.lookDX += dx; this.lookDY += dy; this.sway.x += dx * 0.0004; this.sway.y += dy * 0.0004; }
 
   update(dt, cam) {
     const game = this.game, w = game.world, set = G.Ranked.profile.settings;
@@ -118,6 +129,7 @@ G.Player = class {
     let speed = (sprinting ? 7.0 : 4.6) * st.move * (foulee ? 1.2 : 1);
     speed *= G.lerp(1, 0.55, this.ads);
     if (inBlock === G.B.WATER) speed *= 0.6;
+    if (this.slowT > 0) { this.slowT -= dt; speed *= 0.55; }
     this.sprinting = sprinting && wish.lengthSq() > 0;
     const accel = this.onGround ? (feet === G.B.ICE ? 2.5 : 14) : 3;
     this.vel.x = G.lerp(this.vel.x, wish.x * speed, Math.min(1, accel * dt));
@@ -180,7 +192,8 @@ G.Player = class {
         this.recoil = Math.min(1, this.recoil + 0.35);
         this.pitch += st.recoil * G.lerp(1, 0.55, this.ads);
         this.yaw += (Math.random() - 0.5) * st.recoil * 0.5;
-        this.flashT = 0.05;
+        this.flashT = 0.05; this.boltT = 1; if (st.pump || st.id === 'sniper') this.pumpT = 1;
+        this.ejectShell();
         if (s.mag === 0 && s.reserve > 0) setTimeout(() => this.tryReload(), 150);
       } else if (!this.triggerHeld) { G.Audio.S.empty(); this.tryReload(); }
       this.triggerHeld = true;
@@ -192,22 +205,53 @@ G.Player = class {
     this.recoil = Math.max(0, this.recoil - dt * 6);
 
     // position de l'arme en vue subjective
-    const hip = new THREE.Vector3(0.15, -0.14, -0.42), adsP = new THREE.Vector3(0, -0.041, -0.3);
+    const U = this.vmGun.userData;
+    const hip = new THREE.Vector3(0.1, -0.1, -0.2), adsP = new THREE.Vector3(0, -(U.sightY || 0.07) * 0.6, -0.12);
     const p = hip.clone().lerp(adsP, this.ads);
     const bobAmt = Math.min(1, hsp / 5) * (1 - this.ads * 0.85);
     p.x += Math.cos(this.bob) * 0.012 * bobAmt; p.y += Math.abs(Math.sin(this.bob)) * 0.014 * bobAmt;
-    p.z += this.recoil * 0.035;
+    p.z += this.recoil * 0.03;
+    this.sway.multiplyScalar(Math.max(0, 1 - dt * 8));
+    this.sway.x = G.clamp(this.sway.x, -0.04, 0.04); this.sway.y = G.clamp(this.sway.y, -0.04, 0.04);
+    p.x -= this.sway.x * (1 - this.ads * 0.8); p.y += this.sway.y * (1 - this.ads * 0.8);
     if (this.sprinting) { p.x -= 0.05; p.y -= 0.04; }
-    if (this.reloadT > 0) { const t = this.reloadT / (st.reload * this.reloadMult()); p.y -= Math.sin((1 - t) * Math.PI) * 0.15; }
+    let reloadK = 0;
+    if (this.reloadT > 0) { const t = 1 - this.reloadT / (st.reload * this.reloadMult()); reloadK = Math.sin(t * Math.PI); p.y -= reloadK * 0.04; p.x -= reloadK * 0.03;
+      if (U.mag) { const mt = t < 0.15 ? 0 : t < 0.4 ? (t - 0.15) / 0.25 : t < 0.55 ? 1 : t < 0.8 ? 1 - (t - 0.55) / 0.25 : 0; U.mag.position.copy(U.magBase); U.mag.position.y -= mt * 0.25; U.mag.position.z += mt * 0.05; U.mag.visible = mt < 0.95; }
+      if (U.cyl) U.cyl.position.x = U.cyl.userData.base === undefined ? (U.cyl.userData.base = U.cyl.position.x) : U.cyl.userData.base + reloadK * 0.045;
+    } else if (U.mag) { U.mag.position.copy(U.magBase); U.mag.visible = true; }
+    // culasse / pompe
+    this.boltT = Math.max(0, this.boltT - dt * 14);
+    if (U.bolt && U.boltBase) { U.bolt.position.copy(U.boltBase); if (st.id === 'sniper') U.bolt.rotation.z = Math.sin(Math.min(1, this.pumpT) * Math.PI) * 1.2; else U.bolt.position.z += this.boltT * 0.035; }
+    if (this.pumpT > 0) { this.pumpT = Math.max(0, this.pumpT - dt * 2.2); }
+    if (U.pump) { U.pump.position.copy(U.pumpBase); U.pump.position.z += Math.sin(Math.min(1, (1 - this.pumpT) * 1.3) * Math.PI) * (this.pumpT > 0 ? 0.08 : 0); }
+    this.updateShells(dt);
     if (this.switchT > 0) p.y -= this.switchT * 0.4;
     this.vmRoot.position.copy(p);
-    this.vmRoot.rotation.set(this.recoil * 0.12 + (this.reloadT > 0 ? 0.25 : 0), this.sprinting ? 0.6 : 0, this.sprinting ? 0.25 : 0);
+    this.vmRoot.rotation.set(this.recoil * 0.1 + reloadK * 0.35 + this.sway.y * 2, (this.sprinting ? 0.6 : 0) - this.sway.x * 2, (this.sprinting ? 0.25 : 0) + reloadK * 0.5);
     const scoped = st.scope && this.ads > 0.85;
     this.vmRoot.visible = !scoped && this.meleeT <= 0;
     this.knife.visible = this.meleeT > 0;
     if (this.knife.visible) { const t = 1 - this.meleeT / 0.35; this.knife.position.set(0.25 - t * 0.35, -0.15, -0.35 - Math.sin(t * Math.PI) * 0.2); this.knife.rotation.set(0, 0.6 - t * 1.4, -0.4); }
     const scope = document.getElementById('scope');
     if (scope) scope.style.display = scoped ? 'block' : 'none';
+  }
+  ejectShell() {
+    const U = this.vmGun.userData;
+    if (!U.eject || this.slot.id === 'ray' || this.slot.id === 'magnum') return;
+    if (!this._shellGeo) this._shellGeo = new THREE.BoxGeometry(0.012, 0.012, 0.03);
+    const m = new THREE.Mesh(this._shellGeo, U.brass);
+    const p = U.eject.clone(); this.vmGun.localToWorld(p);
+    m.position.copy(p); this.vmScene.add(m);
+    this.shells.push({ m, v: new THREE.Vector3(G.rand(1.2, 1.8), G.rand(1.0, 1.6), G.rand(-0.1, 0.3)), life: 0.5 });
+    if (this.shells.length > 12) { const o = this.shells.shift(); this.vmScene.remove(o.m); }
+  }
+  updateShells(dt) {
+    for (let i = this.shells.length - 1; i >= 0; i--) {
+      const s = this.shells[i]; s.life -= dt; s.v.y -= 9 * dt;
+      s.m.position.addScaledVector(s.v, dt); s.m.rotation.x += dt * 20; s.m.rotation.y += dt * 13;
+      if (s.life <= 0) { this.vmScene.remove(s.m); this.shells.splice(i, 1); }
+    }
   }
   reloadMult() { return this.perks.has('mainleste') ? 0.5 : 1; }
   tryReload() {

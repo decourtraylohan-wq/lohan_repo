@@ -112,6 +112,45 @@ G.Tex = (function () {
     tile('magma', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const crack = ((x * 3 + y * 5) % 7 === 0) || ((x + y * 2) % 9 === 0); t.px(x, y, crack ? 0xff8a20 : 0x4a1e10, Math.floor((t.rnd() - 0.5) * 20)); } });
     tile('redsand', speckle(0xb8643a, 26));
 
+
+    // --- plantes (rendues en croix) ---
+    const plant = (stem, head, headRows) => (t) => {
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.clear(x, y);
+      for (let y = 6; y < 16; y++) t.px(7 + (y % 3 === 0 ? 1 : 0), y, stem, Math.floor((t.rnd() - 0.5) * 20));
+      if (head) for (const [x, y] of headRows) t.px(x, y, head, Math.floor((t.rnd() - 0.5) * 30));
+    };
+    tile('flower_red', plant(0x3e8a24, 0xd02828, [[6, 3], [7, 3], [8, 3], [6, 4], [7, 4], [8, 4], [7, 2], [7, 5], [5, 4], [9, 4]]));
+    tile('flower_yellow', plant(0x3e8a24, 0xf0d020, [[6, 4], [7, 4], [8, 4], [7, 3], [7, 5], [6, 5], [8, 3]]));
+    tile('tallgrass', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.clear(x, y); for (let i = 0; i < 9; i++) { const x = 1 + Math.floor(t.rnd() * 14), h = 5 + Math.floor(t.rnd() * 10); for (let y = 16 - h; y < 16; y++) t.px(x, y, 0x5aa03a, Math.floor((t.rnd() - 0.5) * 40)); } });
+    tile('wheat', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.clear(x, y); for (let x = 1; x < 16; x += 3) { for (let y = 4; y < 16; y++) t.px(x, y, y < 8 ? 0xd8b040 : 0x9a9a30, Math.floor((t.rnd() - 0.5) * 30)); t.px(x + 1, 5, 0xe0c050); t.px(x - 1 < 0 ? 0 : x - 1, 6, 0xe0c050); } });
+    tile('deadbush', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.clear(x, y); for (let i = 0; i < 6; i++) { let x = 8, y = 15; const dx = t.rnd() < 0.5 ? -1 : 1; for (let k = 0; k < 9; k++) { t.px(G.clamp(x, 0, 15), y, 0x7a5a30); y--; if (t.rnd() < 0.5) x += dx; } } });
+    tile('farmland', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, y % 4 === 0 ? 0x4a2e18 : 0x6a4426, Math.floor((t.rnd() - 0.5) * 20)); });
+    tile('dirtpath', speckle(0x9a7a48, 30));
+    // --- ville ---
+    tile('asphalt', speckle(0x3a3b3e, 14));
+    tile('asphalt_line', (t) => { speckle(0x3a3b3e, 14)(t); for (let y = 0; y < 16; y++) if (y % 8 < 5) { t.px(7, y, 0xe8c840); t.px(8, y, 0xe8c840); } });
+    tile('sidewalk', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, (x % 8 === 0 || y % 8 === 0) ? 0x8a8a86 : 0xb0b0aa, Math.floor((t.rnd() - 0.5) * 12)); });
+    tile('concrete', speckle(0xa8a6a0, 12));
+    tile('concrete_dark', speckle(0x6a6a6e, 14));
+    tile('glass', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const e = x === 0 || y === 0 || x === 15 || y === 15; if (e) t.px(x, y, 0x3a4048); else if ((x + y) % 11 === 0 && x > 2 && x < 13) t.px(x, y, 0xd8e8f0); else t.clear(x, y); } });
+    tile('sewer', (t) => {
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+        const row = Math.floor(y / 4), off = row % 2 ? 4 : 0;
+        const mortar = y % 4 === 3 || (x + off) % 8 === 7;
+        t.px(x, y, mortar ? 0x2a2e24 : (t.rnd() < 0.25 ? 0x4a5a30 : 0x5a5e52), mortar ? 0 : Math.floor((t.rnd() - 0.5) * 16));
+      }
+    });
+    tile('roof', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, y % 4 === 3 ? 0x2a2224 : 0x4a3a3e, Math.floor((t.rnd() - 0.5) * 14)); });
+    tile('grate', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { if (x % 4 === 0 || y % 4 === 0) t.px(x, y, 0x5a5c60, Math.floor((t.rnd() - 0.5) * 16)); else t.px(x, y, 0x101010); } });
+    const car = (c) => (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, c, (y < 2 ? 25 : y > 13 ? -30 : 0) + Math.floor((t.rnd() - 0.5) * 8)); };
+    tile('car_red', car(0xb02020)); tile('car_blue', car(0x2050b0)); tile('car_white', car(0xd8d8d8));
+    tile('awning', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, Math.floor(x / 4) % 2 ? 0xe8e8e0 : 0xc03030, Math.floor((t.rnd() - 0.5) * 10)); });
+    tile('whitewall', speckle(0xe2ddd2, 10));
+    tile('tire', speckle(0x1c1c1e, 10));
+    tile('bookshelf', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const shelf = y % 8 === 0 || y % 8 === 7; t.px(x, y, shelf ? 0xa98653 : G.pick([0x8a2020, 0x20508a, 0x2a7a2a, 0x8a7a20, 0x4a2a6a]), shelf ? 0 : -10); } });
+    tile('snowgrass', (t) => { speckle(0xe8eef4, 14)(t); for (let i = 0; i < 20; i++) t.px(Math.floor(t.rnd() * 16), Math.floor(t.rnd() * 16), 0x6a8a5a); });
+    tile('clay', speckle(0xb06a40, 24));
+
     atlasTexture = new THREE.CanvasTexture(atlasCanvas);
     atlasTexture.magFilter = THREE.NearestFilter;
     atlasTexture.minFilter = THREE.NearestFilter;

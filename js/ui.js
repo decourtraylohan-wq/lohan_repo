@@ -3,7 +3,7 @@ G.UI = (function () {
   const $ = (id) => document.getElementById(id);
   const R = G.Ranked;
   let current = 'main', previous = 'main';
-  let selMode = 'classic', selMap = 'village';
+  let selMode = 'classic', selMap = 'village', selType = 'zombies';
   let msgTimer = null;
   const thumbs = {};
 
@@ -46,16 +46,17 @@ G.UI = (function () {
   function thumb(id) {
     if (thumbs[id]) return thumbs[id];
     const m = G.Maps.create(id);
-    const c = G.topDown(m.world);
+    const c = G.topDown(m.world), S = m.world.W;
     const big = document.createElement('canvas'); big.width = 256; big.height = 96;
     const ctx = big.getContext('2d'); ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(c, 0, 20, 64, 24, 0, 0, 256, 96);
+    ctx.drawImage(c, 0, S * 0.31, S, S * 0.375, 0, 0, 256, 96);
     thumbs[id] = big.toDataURL();
     return thumbs[id];
   }
 
   function renderPlay() {
     document.querySelectorAll('.mode').forEach((b) => b.classList.toggle('active', b.dataset.mode === selMode));
+    document.querySelectorAll('.gtype').forEach((b) => b.classList.toggle('active', b.dataset.type === selType));
     const P = R.profile;
     const ri = $('rankedInfo');
     if (selMode === 'ranked') {
@@ -66,7 +67,7 @@ G.UI = (function () {
         '<p class="hint" style="margin:10px 0 0">Plus votre rang monte, plus les parties se compliquent. Les cartes difficiles multiplient les RP gagnés.</p>';
     } else ri.classList.add('hidden');
     $('mapList').innerHTML = G.Maps.list.map((m) => {
-      const best = P.career.bestWave[m.id] || 0;
+      const best = P.career.bestWave[m.id + (selType === 'soldats' ? ':s' : '')] || 0;
       return '<button class="mapcard' + (m.id === selMap ? ' active' : '') + '" data-map="' + m.id + '"><div class="thumb" style="background-image:url(' + thumb(m.id) + ')"></div><div class="info"><h3>' + m.name + '</h3><p>' + m.desc + '</p>' +
         '<div class="meta"><span class="stars">' + '★'.repeat(m.stars) + '<span style="opacity:.25">' + '★'.repeat(4 - m.stars) + '</span></span><span>Record : vague ' + best + '</span></div>' +
         (selMode === 'ranked' ? '<div class="meta" style="margin-top:4px"><span style="color:var(--muted)">Multiplicateur RP</span><span>×' + m.rpMult.toFixed(2) + '</span></div>' : '') + '</div></button>';
@@ -88,13 +89,13 @@ G.UI = (function () {
       stat(hs + ' %', 'Ratio tête') + stat(acc + ' %', 'Précision') + stat(c.bosses, 'Boss vaincus') + stat(c.specials, 'Spéciaux tués') +
       stat(Math.round(c.dmgDealt).toLocaleString('fr-FR'), 'Dégâts infligés') + stat(Math.round(c.dmgTaken).toLocaleString('fr-FR'), 'Dégâts subis') +
       stat(c.points.toLocaleString('fr-FR'), 'Points gagnés') + stat(G.fmtTime(c.time), 'Temps de jeu') +
-      G.Maps.list.map((m) => stat(c.bestWave[m.id] || 0, 'Record ' + m.name)).join('') + '</div></div>';
+      G.Maps.list.map((m) => stat((c.bestWave[m.id] || 0) + ' / ' + (c.bestWave[m.id + ':s'] || 0), 'Record ' + m.name + ' (Z / S)')).join('') + '</div></div>';
     h += '<div class="cols"><div class="panel"><h3 class="sec">Historique</h3>';
     if (!P.runs.length) h += '<p class="hint">Aucune partie jouée pour l\'instant.</p>';
     else {
-      h += '<table><tr><th>Date</th><th>Mode</th><th>Carte</th><th>Vague</th><th>Kills</th><th>RP</th></tr>';
+      h += '<table><tr><th>Date</th><th>Mode</th><th>Type</th><th>Carte</th><th>Vague</th><th>Kills</th><th>RP</th></tr>';
       for (const r of P.runs) {
-        h += '<tr class="run' + (r.id === selId ? ' sel' : '') + '" data-id="' + r.id + '"><td>' + fmtDate(r.date) + '</td><td><span class="tagm' + (r.mode === 'ranked' ? ' r' : '') + '">' + (r.mode === 'ranked' ? 'Classé' : 'Classique') + '</span></td><td>' + G.esc(r.mapName) + '</td><td>' + r.wave + '</td><td>' + r.kills + '</td><td class="' + (r.rpDelta > 0 ? 'pos' : r.rpDelta < 0 ? 'neg' : '') + '">' + (r.mode === 'ranked' ? (r.rpDelta > 0 ? '+' : '') + r.rpDelta : '—') + '</td></tr>';
+        h += '<tr class="run' + (r.id === selId ? ' sel' : '') + '" data-id="' + r.id + '"><td>' + fmtDate(r.date) + '</td><td><span class="tagm' + (r.mode === 'ranked' ? ' r' : '') + '">' + (r.mode === 'ranked' ? 'Classé' : 'Classique') + '</span></td><td>' + (r.gameType === 'soldats' ? 'Soldats' : 'Zombies') + '</td><td>' + G.esc(r.mapName) + '</td><td>' + r.wave + '</td><td>' + r.kills + '</td><td class="' + (r.rpDelta > 0 ? 'pos' : r.rpDelta < 0 ? 'neg' : '') + '">' + (r.mode === 'ranked' ? (r.rpDelta > 0 ? '+' : '') + r.rpDelta : '—') + '</td></tr>';
       }
       h += '</table>';
     }
@@ -109,7 +110,7 @@ G.UI = (function () {
     if (!r) return '<h3 class="sec">Détail</h3><p class="hint">Sélectionnez une partie.</p>';
     const acc = r.shots ? Math.round((r.hits / r.shots) * 100) : 0;
     let h = '<h3 class="sec">Partie du ' + fmtDate(r.date) + '</h3>';
-    h += '<div class="kv" style="margin-top:0"><span>Carte</span><span>' + G.esc(r.mapName) + '</span><span>Mode</span><span>' + (r.mode === 'ranked' ? 'Classé (' + r.rankLabel + ')' : 'Classique') + '</span>' +
+    h += '<div class="kv" style="margin-top:0"><span>Carte</span><span>' + G.esc(r.mapName) + '</span><span>Mode</span><span>' + (r.mode === 'ranked' ? 'Classé (' + r.rankLabel + ')' : 'Classique') + ' — ' + (r.gameType === 'soldats' ? 'Soldats' : 'Zombies') + '</span>' +
       '<span>Vague atteinte</span><span>' + r.wave + '</span><span>Durée</span><span>' + G.fmtTime(r.time) + '</span>' +
       '<span>Éliminations / tête</span><span>' + r.kills + ' / ' + r.headshots + '</span><span>Précision</span><span>' + acc + ' %</span>' +
       '<span>Dégâts infligés / subis</span><span>' + r.dmgDealt + ' / ' + r.dmgTaken + '</span><span>Points</span><span>' + r.points + '</span>' +
@@ -142,10 +143,14 @@ G.UI = (function () {
     h += '</div><p class="hint">Forge ★ (dès la vague 8, 5000 pts) : dégâts ×2, chargeur ×1,5, réserve ×1,6.</p>';
     h += '<h3 class="sec">Atouts</h3><div class="cards">' + Object.values(G.PERKS).map((p) => '<div class="card"><h4 style="color:#' + p.color.toString(16).padStart(6, '0') + '">' + p.icon + ' ' + p.name + '</h4><div class="sub">' + p.price + ' pts</div>' + p.desc + '</div>').join('') + '</div>';
     h += '<h3 class="sec">Bonus</h3><div class="cards">' + Object.values(G.POWERUPS).map((p) => '<div class="card"><h4 style="color:#' + p.color.toString(16).padStart(6, '0') + '">' + p.icon + ' ' + p.name + '</h4><div class="sub">' + ({ 'MUNITIONS MAX': 'Recharge toutes les armes et grenades', 'MORT INSTANTANÉE': 'Tout tue en un coup (20 s)', 'POINTS ×2': 'Points doublés (20 s)', 'BOMBE': 'Élimine tous les zombies (hors boss)', 'FUREUR': 'Munitions infinies sans recharger (15 s)', 'BUTIN': '+500 points' }[p.name]) + '</div></div>').join('') + '</div>';
-    const ZD = { walker: 'Lent au début, il accélère au fil des vagues.', runner: 'Rapide et fragile. Vague 3+.', brute: 'Énorme réservoir de PV, frappe fort. Vague 6+.', bloater: 'Explose au contact ou à sa mort. Vague 8+.', spitter: 'Garde ses distances et crache de l\'acide. Vague 11+.', armored: 'Casque qui absorbe les tirs à la tête.', minion: 'Invoqué par le Nécromancien.' };
+    const ZD = { crawler: 'Rampe au sol : petite cible, difficile à toucher. Vague 4+.', stalker: 'Créature à quatre pattes qui bondit sur vous. Vague 7+.', screamer: 'Son cri vous ralentit, brouille la vue et enrage les zombies proches. Vague 9+.', walker: 'Lent au début, il accélère au fil des vagues.', runner: 'Rapide et fragile. Vague 3+.', brute: 'Énorme réservoir de PV, frappe fort. Vague 6+.', bloater: 'Explose au contact ou à sa mort. Vague 8+.', spitter: 'Garde ses distances et crache de l\'acide. Vague 11+.', armored: 'Casque qui absorbe les tirs à la tête.', minion: 'Invoqué par le Nécromancien.' };
     h += '<h3 class="sec">Bestiaire</h3><div class="cards">' + Object.entries(G.ZTYPES).map(([k, z]) => '<div class="card"><h4>' + z.name + '</h4><div class="sub">PV ×' + z.hp + ' — vitesse ' + z.speed + '</div>' + ZD[k] + '</div>').join('') + '</div>';
     const BD = { colosse: 'Vagues 5, 20, 35… Frappe le sol : sautez pour éviter l\'onde de choc !', necro: 'Vagues 10, 25, 40… Invoque des squelettes, se téléporte et lance des orbes.', belier: 'Vagues 15, 30, 45… Charge en ligne droite. Faites-le percuter un mur pour l\'étourdir (dégâts ×2).' };
     h += '<h3 class="sec">Boss</h3><div class="cards">' + G.BOSSES.map((b) => '<div class="card"><h4 style="color:#ff5a5a">' + b.name + '</h4><div class="sub">' + b.hp + ' PV de base</div>' + BD[b.id] + '</div>').join('') + '</div>';
+    const SD = { rifleman: 'Rafales au fusil d\'assaut, garde ses distances.', assault: 'Fonce au contact avec sa mitraillette.', breacher: 'Fusil à pompe et casque : dévastateur de près.', sniper: 'Un laser rouge trahit sa visée : mettez-vous à couvert !', heavy: 'Blindé, longues rafales de mitrailleuse.', grenadier: 'Lance des grenades pour vous déloger.' };
+    h += '<h3 class="sec">Mode Soldats</h3><div class="cards">' + Object.entries(G.STYPES).map(([k, z]) => '<div class="card"><h4>' + z.name + '</h4><div class="sub">PV ×' + z.hp + ' — ' + G.WEAPONS[z.weapon].name + '</div>' + SD[k] + '</div>').join('') + '</div>';
+    const SBD = { juggernaut: 'Armure lourde et minigun : il lance la rotation avant de tirer. Restez à couvert.', commandant: 'Appelle des renforts et lance des grenades.', pyro: 'Lance-flammes à courte portée et zones de feu. Gardez vos distances.' };
+    h += '<h3 class="sec">Boss soldats</h3><div class="cards">' + G.SBOSSES.map((b) => '<div class="card"><h4 style="color:#ff5a5a">' + b.name + '</h4><div class="sub">' + b.hp + ' PV de base</div>' + SBD[b.id] + '</div>').join('') + '</div>';
     $('arsenalBody').innerHTML = h;
   }
 
@@ -168,7 +173,7 @@ G.UI = (function () {
 
   function showGameOver(run, res) {
     const acc = run.shots ? Math.round((run.hits / run.shots) * 100) : 0;
-    let h = '<p class="over-title">VOUS ÊTES MORT</p><div style="color:var(--muted)">' + G.esc(run.mapName) + ' — ' + (run.mode === 'ranked' ? 'Classé' : 'Classique') + '</div>';
+    let h = '<p class="over-title">VOUS ÊTES MORT</p><div style="color:var(--muted)">' + G.esc(run.mapName) + ' — ' + (run.gameType === 'soldats' ? 'Soldats' : 'Zombies') + ' — ' + (run.mode === 'ranked' ? 'Classé' : 'Classique') + '</div>';
     h += '<div class="statgrid" style="margin:14px 0">' + [
       [run.wave, 'Vague atteinte'], [run.kills, 'Éliminations'], [run.headshots, 'Tirs à la tête'], [acc + ' %', 'Précision'],
       [run.points, 'Points gagnés'], [G.fmtTime(run.time), 'Temps survécu'], [run.bosses, 'Boss vaincus'], [run.dmgTaken, 'Dégâts subis'],
@@ -186,7 +191,7 @@ G.UI = (function () {
     $('scr-over').classList.remove('hidden');
     if (res.promoted) G.Audio.S.rankUp();
     setTimeout(() => { const b = $('overBar'); if (b) b.style.width = Math.round(res.infoAfter.progress * 100) + '%'; }, 200);
-    $('btnAgain').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.start(run.map, run.mode); });
+    $('btnAgain').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.start(run.map, run.mode, run.gameType || 'zombies'); });
     $('btnDetail').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.quitToMenu(); go('stats'); });
     $('btnMenu').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.quitToMenu(); go('main'); });
   }
@@ -279,7 +284,8 @@ G.UI = (function () {
   function init() {
     document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
     document.querySelectorAll('.mode').forEach((b) => b.addEventListener('click', () => { selMode = b.dataset.mode; G.Audio.S.click(); renderPlay(); }));
-    $('btnLaunch').addEventListener('click', () => { G.Audio.init(); G.game.start(selMap, selMode); });
+    $('btnLaunch').addEventListener('click', () => { G.Audio.init(); G.game.start(selMap, selMode, selType); });
+    document.querySelectorAll('.gtype').forEach((b) => b.addEventListener('click', () => { selType = b.dataset.type; G.Audio.S.click(); renderPlay(); }));
     $('btnResume').addEventListener('click', () => G.game.setPaused(false));
     $('btnAbandon').addEventListener('click', () => { $('scr-pause').classList.add('hidden'); G.game.paused = false; G.game.gameOver(); });
     bindOptions();
