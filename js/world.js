@@ -9,6 +9,7 @@ G.B = {
   BIRCH: 55, BIRCH_LEAVES: 56, DARK_LOG: 57, DARK_LEAVES: 58, AUTUMN_LEAVES: 59, SANDBAG: 60, CHISELED: 61, PORTAL: 62, BUSH: 63, MUD: 64, ROCK: 65, SCORIA: 66, SCORIA_DARK: 67, PODZOL: 68, BARBED: 69, WALLPANEL: 70,
   VOLCROCK: 71, BASALT2: 72, ASH: 73, SCORIA3: 74, ASPHALT_CRACK: 75, BARREL: 76, LOCKER: 77, BIN: 78, GRAFFITI1: 79, GRAFFITI2: 80, RUBBLE: 81, CABINET: 82,
   STAIR_STONE: 83, STAIR_WOOD: 84, STAIR_DARK: 85, STAIR_CONCRETE: 86, STAIR_SAND: 87, STAIR_METAL: 88, SNOW_BLOCK: 89, LAVA_FLOW: 90,
+  LIMESTONE: 91, ZINC: 92, BROWNSTONE: 93,
 };
 
 G.BLOCKS = (function () {
@@ -100,6 +101,9 @@ G.BLOCKS = (function () {
   def(B.CABINET, 'cabinet');
   def(B.SNOW_BLOCK, 'snow');
   def(B.LAVA_FLOW, 'lava', null, null, { solid: false, opaque: false, liquid: true, bright: true, bulletPass: true, flow: true });
+  def(B.LIMESTONE, 'limestone');
+  def(B.ZINC, 'zinc');
+  def(B.BROWNSTONE, 'brownstone');
   // marches d'escalier (forme de vraie marche, collision d'un bloc plein)
   const stair = { opaque: false, stair: true };
   def(B.STAIR_STONE, 'stonebrick', null, null, stair);
@@ -510,7 +514,8 @@ G.World = class {
     const big = new Uint8Array(N);
     for (let i = 0; i < N; i++) {
       let ok = 1;
-      for (let dz = -1; dz <= 1 && ok; dz++) for (let dx = -1; dx <= 1 && ok; dx++) for (let dy = 0; dy <= 2; dy++) if (this.isSolid(nx[i] + dx, ny[i] + dy, nz[i] + dz)) { ok = 0; break; }
+      // 3×3 libre sur deux blocs au-dessus des pieds : les marches d'un bloc autour sont acceptées, pas les murs ni les portes
+      for (let dz = -1; dz <= 1 && ok; dz++) for (let dx = -1; dx <= 1 && ok; dx++) for (let dy = 1; dy <= 2; dy++) if (this.isSolid(nx[i] + dx, ny[i] + dy, nz[i] + dz)) { ok = 0; break; }
       big[i] = ok;
     }
     this.nav = { big, distBig: new Int32Array(N).fill(-1), blocked: new Int16Array(N), N, nodeAt, nx: Int16Array.from(nx), ny: Int16Array.from(ny), nz: Int16Array.from(nz), outStart, outList: Int32Array.from(outList), inStart: inCount, inList, dist: new Int32Array(N).fill(-1), queue: new Int32Array(N) };

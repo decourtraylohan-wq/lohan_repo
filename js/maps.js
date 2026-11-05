@@ -269,7 +269,7 @@ G.Maps = (function () {
     const wide = x1 - x0 >= 12 && z1 - z0 >= 12;
     for (let k = 0; k <= nf; k++) {
       const F = g + 4 * k;
-      w.fill(x0, F, z0, x1, F, z1, k === 0 ? o.floor : k === nf ? B.ROOF : B.CONCRETE);
+      w.fill(x0, F, z0, x1, F, z1, k === 0 ? o.floor : k === nf ? (o.style === 'paris' ? B.PLANKS : B.ROOF) : B.CONCRETE);
       if (k > 0) for (let z = z0 + 3; z < z1 - 1; z += 5) for (let x = x0 + 3; x < x1 - 1; x += 5) if (!nearStair(x, z) && x !== mx && z !== mz) w.set(x, F, z, B.GLOW);
     }
     const free = (x, z) => !nearStair(x, z) && !(wide && (x === mx || z === mz && x < mx)) && !(Math.abs(x - mx) <= 1 && (z === z0 + 1 || z === z1 - 1)) && !(Math.abs(z - mz) <= 1 && (x === x0 + 1 || x === x1 - 1));
@@ -277,14 +277,23 @@ G.Maps = (function () {
       const F = g + 4 * k;
       for (let y = F + 1; y <= F + 3; y++) {
         const ring = [];
-        for (let x = x0; x <= x1; x++) { ring.push([x, z0, x - x0]); ring.push([x, z1, x - x0]); }
-        for (let z = z0 + 1; z < z1; z++) { ring.push([x0, z, z - z0]); ring.push([x1, z, z - z0]); }
-        for (const [x, z, i] of ring) {
-          const pillar = i % 4 === 0 || x === x0 && z === z0 || x === x1 && z === z1 || x === x0 && z === z1 || x === x1 && z === z0;
+        for (let x = x0; x <= x1; x++) { ring.push([x, z0, x - x0, 'n']); ring.push([x, z1, x - x0, 's']); }
+        for (let z = z0 + 1; z < z1; z++) { ring.push([x0, z, z - z0, 'w']); ring.push([x1, z, z - z0, 'e']); }
+        for (const [x, z, i, sd] of ring) {
+          const corner = (x === x0 || x === x1) && (z === z0 || z === z1);
+          const pillar = i % 4 === 0 || corner;
           let b = o.wall;
-          if (!pillar && (o.glassFull ? true : y === F + 2)) b = B.GLASS;
-          if (!pillar && y === F + 1 && !o.glassFull) b = o.wall;
-          if (k === 0 && y <= F + 2 && o.graffiti && b !== B.GLASS && rnd() < 0.35) b = rnd() < 0.5 ? B.GRAFFITI1 : B.GRAFFITI2;
+          if (o.style) {
+            // façades anciennes : fenêtres hautes et régulières ; rez-de-chaussée en vitrines côté rue, fermé côté ruelle
+            const alley = (o.alleys || []).includes(sd);
+            if (k === 0) {
+              if (!alley) { if (!corner && i % 3 !== 0 && y <= F + 2) b = B.GLASS; else if (o.trim) b = o.trim; }
+              else if (!corner && i % 4 === 2 && y === F + 2) b = B.GLASS;
+            } else if (!corner && i % 2 === 1 && y <= F + 2) b = B.GLASS;
+          } else {
+            if (!pillar && (o.glassFull ? true : y === F + 2)) b = B.GLASS;
+            if (!pillar && y === F + 1 && !o.glassFull) b = o.wall;
+          }
           w.set(x, y, z, b);
         }
       }
@@ -313,10 +322,33 @@ G.Maps = (function () {
     }
     // portes au rez-de-chaussée sur les quatre faces
     for (const [x, z] of [[mx, z0], [mx + 1, z0], [mx, z1], [mx + 1, z1], [x0, mz], [x0, mz + 1], [x1, mz], [x1, mz + 1]]) { w.set(x, g + 1, z, B.AIR); w.set(x, g + 2, z, B.AIR); }
-    // toit : parapet et climatiseurs
-    for (let x = x0; x <= x1; x++) { w.set(x, top + 1, z0, o.wall); w.set(x, top + 1, z1, o.wall); }
-    for (let z = z0; z <= z1; z++) { w.set(x0, top + 1, z, o.wall); w.set(x1, top + 1, z, o.wall); }
-    for (let i = 0; i < 3; i++) { const x = x0 + 3 + Math.floor(rnd() * (x1 - x0 - 6)), z = z0 + 5 + Math.floor(rnd() * (z1 - z0 - 8)); if (!nearStair(x, z)) w.set(x, top + 1, z, B.METAL); }
+    if (o.style === 'paris') {
+      // combles en zinc (brisis avec lucarnes, terrasson) et souches de cheminées en brique
+      for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
+        const e = Math.min(x - x0, x1 - x, z - z0, z1 - z);
+        if (e === 0) { const i = z === z0 || z === z1 ? x - x0 : z - z0, corner = (x === x0 || x === x1) && (z === z0 || z === z1); w.set(x, top + 1, z, !corner && i % 2 === 1 ? B.GLASS : B.ZINC); }
+        else if (e === 1) w.set(x, top + 2, z, B.ZINC);
+        else w.set(x, top + 3, z, B.ZINC);
+      }
+      for (const [x, z] of [[x0 + 2, mz], [x1 - 2, mz], [mx, z0 + 2], [mx + 1, z1 - 2]]) if (rnd() < 0.8) { w.set(x, top + 4, z, B.BRICK); w.set(x, top + 5, z, B.BRICK); dbox(w, x + 0.3, top + 6, z + 0.3, x + 0.7, top + 6.3, z + 0.7, 'darkbrick'); }
+    } else {
+      // toit : parapet et climatiseurs
+      for (let x = x0; x <= x1; x++) { w.set(x, top + 1, z0, o.wall); w.set(x, top + 1, z1, o.wall); }
+      for (let z = z0; z <= z1; z++) { w.set(x0, top + 1, z, o.wall); w.set(x1, top + 1, z, o.wall); }
+      for (let i = 0; i < 3; i++) { const x = x0 + 3 + Math.floor(rnd() * (x1 - x0 - 6)), z = z0 + 5 + Math.floor(rnd() * (z1 - z0 - 8)); if (!nearStair(x, z)) w.set(x, top + 1, z, B.METAL); }
+      if (o.style === 'ny') {
+        // château d'eau en bois sur pieds métalliques
+        for (const [x, z] of [[x1 - 3, z0 + 2], [x0 + 2, z1 - 4], [mx, mz + 2]]) {
+          if ([[0, 0], [1, 0], [0, 1], [1, 1]].some(([dx, dz]) => nearStair(x + dx, z + dz))) continue;
+          for (const [dx, dz] of [[0.1, 0.1], [1.75, 0.1], [0.1, 1.75], [1.75, 1.75]]) dbox(w, x + dx, top + 1, z + dz, x + dx + 0.15, top + 3, z + dz + 0.15, 'metal');
+          w.fill(x, top + 3, z, x + 1, top + 4, z + 1, B.BARREL);
+          dbox(w, x + 0.1, top + 5, z + 0.1, x + 1.9, top + 5.3, z + 1.9, 'darkbrick');
+          dbox(w, x + 0.5, top + 5.3, z + 0.5, x + 1.5, top + 5.6, z + 1.5, 'darkbrick');
+          break;
+        }
+      }
+    }
+    if (o.style) facadeDecor(w, x0, z0, x1, z1, nf, top, o);
     // dégâts : trous dans la façade, angle effondré, gravats
     if (o.damaged) {
       for (let i = 0; i < 4; i++) {
@@ -329,34 +361,125 @@ G.Maps = (function () {
       }
       if (rnd() < 0.6 && nf >= 3) {
         const cx = rnd() < 0.5 ? x0 : x1 - 3, cz = rnd() < 0.5 ? z0 : z1 - 3;
-        for (let x = cx; x <= cx + 3; x++) for (let z = cz; z <= cz + 3; z++) { if (nearStair(x, z)) continue; for (let y = top - 4; y <= top + 2; y++) w.set(x, y, z, B.AIR); }
+        for (let x = cx; x <= cx + 3; x++) for (let z = cz; z <= cz + 3; z++) { if (nearStair(x, z)) continue; for (let y = top - 4; y <= top + 6; y++) w.set(x, y, z, B.AIR); }
         for (let i = 0; i < 10; i++) { const x = cx - 2 + Math.floor(rnd() * 8), z = cz - 2 + Math.floor(rnd() * 8); if (w.get(x, g + 1, z) === B.AIR && !nearStair(x, z)) w.set(x, g + 1, z, B.RUBBLE); }
       }
     }
     if (o.fireEscape) fireEscape(w, x0, z0, x1, z1, nf, o.fireEscape, g);
     return top;
   }
-  // escalier de secours métallique sur une façade (côté 'e' ou 'w'), à la new-yorkaise
+  // escalier de secours métallique à la new-yorkaise (côté 'e', 'w', 'n' ou 's') sur deux colonnes :
+  // passerelle continue contre le mur à chaque étage, volées dans la colonne extérieure (montée alternée)
   function fireEscape(w, x0, z0, x1, z1, nf, side, g) {
-    const x = side === 'e' ? x1 + 1 : x0 - 1, zs = z0 + 1, wallX = side === 'e' ? x1 : x0;
-    if (z1 - z0 < 10) return;
+    const alongZ = side === 'e' || side === 'w', len = alongZ ? z1 - z0 : x1 - x0;
+    if (len < 8) return;
+    const d = side === 'e' || side === 's' ? 1 : -1;
+    const wallP = side === 'e' ? x1 : side === 'w' ? x0 : side === 's' ? z1 : z0, pin = wallP + d, pout = wallP + 2 * d;
+    const as = (alongZ ? z0 : x0) + (len >= 10 ? 1 : 0);
+    const at = (a, pp) => (alongZ ? [pp, a] : [a, pp]);
+    const up = alongZ ? 2 : 0, down = alongZ ? 3 : 1;
+    const edge = pout + (d > 0 ? 0.92 : 0.02);
     for (let L = 0; L < nf; L++) {
       const F = g + 4 * L, P = F + 4, even = L % 2 === 0;
-      // volée : paire = montée +z (zs+1..zs+3), impaire = montée −z (zs+7..zs+5) ; les paliers se superposent en zs+4
-      const steps = even ? [zs + 1, zs + 2, zs + 3] : [zs + 7, zs + 6, zs + 5];
-      steps.forEach((z, i) => { for (let y = F + 1; y <= F + i; y++) w.set(x, y, z, B.METAL); w.setStair(x, F + 1 + i, z, B.STAIR_METAL, even ? 2 : 3); });
-      // palier au niveau suivant, ouvert au-dessus de la volée et de sa case de départ
-      for (let z = zs; z <= zs + 8; z++) {
-        const open = even ? z <= zs + 3 : z >= zs + 5;
-        if (!open) w.set(x, P, z, B.GRATE);
+      // volée : paire = montée vers +a (as+1..as+3), impaire = montée vers −a (as+7..as+5)
+      const steps = even ? [as + 1, as + 2, as + 3] : [as + 7, as + 6, as + 5];
+      steps.forEach((a, i) => { const [x, z] = at(a, pout); for (let y = F + 1; y <= F + i; y++) w.set(x, y, z, B.METAL); w.setStair(x, F + 1 + i, z, B.STAIR_METAL, even ? up : down); });
+      // palier de l'étage suivant : passerelle pleine côté mur, colonne extérieure ouverte au-dessus de la volée
+      for (let a = as; a <= as + 8; a++) {
+        const [xi, zi] = at(a, pin); w.set(xi, P, zi, B.GRATE);
+        const open = even ? a <= as + 3 : a >= as + 5;
+        if (!open) { const [xo, zo] = at(a, pout); w.set(xo, P, zo, B.GRATE); }
       }
       // garde-corps (détails sans collision)
-      const ox = side === 'e' ? x + 0.92 : x + 0.02;
-      w.details.push({ box: true, x0: ox, y0: P + 1, z0: zs, x1: ox + 0.06, y1: P + 1.08, z1: zs + 9, tile: 'metal' });
-      for (let z = zs; z <= zs + 9; z += 3) w.details.push({ box: true, x0: ox, y0: P + 1, z0: z, x1: ox + 0.06, y1: P + 2.05, z1: z + 0.06, tile: 'metal' });
+      if (alongZ) {
+        dbox(w, edge, P + 1.9, as, edge + 0.06, P + 2.0, as + 9, 'metal');
+        for (let a = as; a <= as + 9; a += 3) dbox(w, edge, P + 1, a, edge + 0.06, P + 2.0, a + 0.06, 'metal');
+      } else {
+        dbox(w, as, P + 1.9, edge, as + 9, P + 2.0, edge + 0.06, 'metal');
+        for (let a = as; a <= as + 9; a += 3) dbox(w, a, P + 1, edge, a + 0.06, P + 2.0, edge + 0.06, 'metal');
+      }
       // porte-fenêtre d'accès à l'étage
-      if (L < nf - 1) { w.set(wallX, P + 1, zs + 4, B.AIR); w.set(wallX, P + 2, zs + 4, B.AIR); }
+      if (L < nf - 1) { const [x, z] = at(as + 4, wallP); w.set(x, P + 1, z, B.AIR); w.set(x, P + 2, z, B.AIR); }
     }
+  }
+  // boîte décorative découpée en morceaux d'au plus un bloc (les tuiles de l'atlas ne se répètent pas)
+  function dbox(w, x0, y0, z0, x1, y1, z1, tile) {
+    const nx = Math.max(1, Math.ceil(x1 - x0 - 1e-6)), ny = Math.max(1, Math.ceil(y1 - y0 - 1e-6)), nz = Math.max(1, Math.ceil(z1 - z0 - 1e-6));
+    const sx = (x1 - x0) / nx, sy = (y1 - y0) / ny, sz = (z1 - z0) / nz;
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) for (let k = 0; k < nz; k++)
+      w.details.push({ box: true, x0: x0 + i * sx, y0: y0 + j * sy, z0: z0 + k * sz, x1: x0 + (i + 1) * sx, y1: y0 + (j + 1) * sy, z1: z0 + (k + 1) * sz, tile });
+  }
+  // modénature des immeubles anciens : bandeaux, corniches, balcons filants en fer forgé, stores des cafés
+  function facadeDecor(w, x0, z0, x1, z1, nf, top, o) {
+    const g = o.g;
+    const face = (sd) => (sd === 'n' ? { ax: 'x', a0: x0, a1: x1 + 1, p: z0, d: -1 } : sd === 's' ? { ax: 'x', a0: x0, a1: x1 + 1, p: z1 + 1, d: 1 } : sd === 'w' ? { ax: 'z', a0: z0, a1: z1 + 1, p: x0, d: -1 } : { ax: 'z', a0: z0, a1: z1 + 1, p: x1 + 1, d: 1 });
+    const fbox = (sd, a0, a1, y0, y1, near, far, tile) => {
+      const f = face(sd), p0 = f.p + f.d * near, p1 = f.p + f.d * far, lo = Math.min(p0, p1), hi = Math.max(p0, p1);
+      if (f.ax === 'x') dbox(w, a0, y0, lo, a1, y1, hi, tile); else dbox(w, lo, y0, a0, hi, y1, a1, tile);
+    };
+    const fronts = ['n', 's', 'w', 'e'].filter((sd) => !(o.alleys || []).includes(sd));
+    for (const sd of ['n', 's', 'w', 'e']) {
+      const f = face(sd), front = fronts.includes(sd);
+      if (o.style === 'paris') {
+        fbox(sd, f.a0 - 0.18, f.a1 + 0.18, g + 3.85, g + 4.05, 0, 0.18, 'limestone');
+        fbox(sd, f.a0 - 0.35, f.a1 + 0.35, top + 0.6, top + 1, 0, 0.35, 'limestone');
+        for (const k of nf >= 4 ? [2, nf - 1] : [nf - 1]) {
+          const F = g + 4 * k;
+          fbox(sd, f.a0 - 0.6, f.a1 + 0.6, F - 0.05, F + 0.12, 0, 0.6, 'limestone');
+          fbox(sd, f.a0 - 0.6, f.a1 + 0.6, F + 0.12, F + 1.0, 0.56, 0.6, 'ironwork');
+        }
+        // stores rouges au-dessus des vitrines côté rue
+        if (front && f.p > 1 && f.p < w.W - 1) for (let a = f.a0 + 1; a < f.a1 - 1; a++) if ((a - f.a0) % 3 !== 0) { fbox(sd, a, a + 1, g + 2.9, g + 3.02, 0, 1.05, 'awning'); fbox(sd, a, a + 1, g + 2.65, g + 2.9, 1.0, 1.05, 'awning'); }
+      } else {
+        fbox(sd, f.a0 - 0.2, f.a1 + 0.2, g + 3.85, g + 4.1, 0, 0.2, 'concrete_dark');
+        for (let k = 2; k < nf; k += 2) fbox(sd, f.a0 - 0.1, f.a1 + 0.1, g + 4 * k - 0.05, g + 4 * k + 0.1, 0, 0.1, o.band || 'concrete');
+        fbox(sd, f.a0 - 0.3, f.a1 + 0.3, top + 1.45, top + 1.7, 0, 0.3, 'concrete_dark');
+        fbox(sd, f.a0 - 0.5, f.a1 + 0.5, top + 1.7, top + 2.05, 0, 0.5, 'concrete_dark');
+      }
+    }
+  }
+  // place parisienne : pavés, fontaine circulaire, statue équestre dorée sur son socle, bancs, arbres, réverbères
+  function place(w, xa, za, xb, zb, g, rnd) {
+    const cx = Math.floor((xa + xb) / 2), cz = Math.floor((za + zb) / 2);
+    const isWalk = (v) => [22, 48, 74, 100].some((c) => Math.abs(v - c) <= 5);
+    for (let z = za; z <= zb; z++) for (let x = xa; x <= xb; x++) {
+      if (isWalk(x) || isWalk(z)) continue;
+      const d = Math.hypot(x - cx, z - cz);
+      w.set(x, g, z, Math.abs(d - 5.6) < 0.55 || (Math.abs(x - cx) <= 0 || Math.abs(z - cz) <= 0) && d > 3.9 ? B.STONEBRICK : (x * 7 + z * 3) % 5 === 0 ? B.GRAVEL : B.COBBLE);
+      if (d < 3.9) {
+        if (d < 1.5) continue;
+        if (d < 2.9) w.set(x, g, z, B.WATER); else w.set(x, g + 1, z, B.LIMESTONE);
+      }
+    }
+    // socle et statue
+    w.fill(cx - 1, g, cz - 1, cx + 1, g, cz + 1, B.STONEBRICK);
+    w.fill(cx - 1, g + 1, cz - 1, cx + 1, g + 3, cz + 1, B.LIMESTONE);
+    for (const [x, z] of [[cx - 1, cz - 1], [cx + 1, cz - 1], [cx - 1, cz + 1], [cx + 1, cz + 1]]) w.set(x, g + 3, z, B.CHISELED);
+    const X = cx + 0.5, Y = g + 4, Z = cz + 0.5, st = (x0, y0, z0, x1, y1, z1) => dbox(w, X + x0, Y + y0, Z + z0, X + x1, Y + y1, Z + z1, 'bronze');
+    st(-0.75, 0.75, -0.24, 0.7, 1.35, 0.24);                                                       // cheval
+    for (const lx of [-0.62, 0.46]) for (const lz of [-0.21, 0.09]) st(lx, 0, lz, lx + 0.14, 0.8, lz + 0.12);
+    st(0.5, 1.1, -0.15, 0.82, 1.9, 0.15); st(0.7, 1.72, -0.13, 1.25, 2.0, 0.13);                   // encolure, tête
+    st(0.74, 1.98, -0.1, 0.84, 2.14, -0.03); st(0.74, 1.98, 0.03, 0.84, 2.14, 0.1);                // oreilles
+    st(-0.98, 0.7, -0.06, -0.75, 1.3, 0.06);                                                      // queue
+    st(-0.25, 1.3, -0.33, 0.15, 1.56, 0.33);                                                      // jambes du cavalier
+    st(-0.25, 1.5, -0.2, 0.1, 2.28, 0.2); st(-0.2, 2.28, -0.13, 0.06, 2.58, 0.13);                // buste, tête
+    st(0.0, 2.0, 0.18, 0.13, 2.55, 0.31);                                                         // bras levé
+    st(0.04, 1.6, 0.26, 0.1, 3.5, 0.32); st(0.1, 2.95, 0.28, 0.8, 3.45, 0.31);                    // étendard
+    dbox(w, cx - 1.02, g + 1.6, cz - 0.6, cx - 0.98, g + 2.3, cz + 1.6, 'chiseled');             // plaque
+    // bancs face à la fontaine (le dossier côté extérieur)
+    for (let k = -1; k <= 1; k++) {
+      w.setStair(cx + k, g + 1, cz - 6, B.STAIR_WOOD, 3); w.setStair(cx + k, g + 1, cz + 6, B.STAIR_WOOD, 2);
+      w.setStair(cx - 6, g + 1, cz + k, B.STAIR_WOOD, 1); w.setStair(cx + 6, g + 1, cz + k, B.STAIR_WOOD, 0);
+    }
+    // arbres d'alignement aux angles et réverbères
+    for (const [x, z] of [[xa + 1, za + 1], [xb - 1, za + 1], [xa + 1, zb - 1], [xb - 1, zb - 1]]) { w.set(x, g, z, B.GRASS); tree(w, x, g, z, rnd); }
+    for (const [x, z] of [[cx - 4, cz - 4], [cx + 4, cz - 4], [cx - 4, cz + 4], [cx + 4, cz + 4]]) parisLamp(w, x, g, z);
+  }
+  function parisLamp(w, x, g, z) {
+    dbox(w, x + 0.32, g + 1, z + 0.32, x + 0.68, g + 1.35, z + 0.68, 'tire');
+    dbox(w, x + 0.43, g + 1.35, z + 0.43, x + 0.57, g + 3.9, z + 0.57, 'tire');
+    w.details.push({ box: true, x0: x + 0.3, y0: g + 3.9, z0: z + 0.3, x1: x + 0.7, y1: g + 4.35, z1: z + 0.7, tile: 'glowstone', bright: true });
+    dbox(w, x + 0.26, g + 4.35, z + 0.26, x + 0.74, g + 4.45, z + 0.74, 'tire');
   }
   function shop(w, x0, z0, x1, z1, g, wall) {
     w.fill(x0, g + 1, z0, x1, g + 6, z1, B.AIR);
@@ -487,17 +610,25 @@ G.Maps = (function () {
         if (z < 26) { const mk = m(x * 0.07, z * 0.07); const t = G.clamp((mk - 0.48) / 0.12, 0, 1); h += t * (8 + (z < 12 ? 3 : 0)); }
         return h;
       }, (x, y, z, h) => (z < 26 && y > 8 ? (y % 3 === 0 ? B.CLAY : B.REDSAND) : y > h - 3 ? B.SAND : B.SANDSTONE));
-      // plateau du canyon avec rampe
-      for (let z = 0; z < 26; z++) for (let x = 46; x < 76; x++) {
-        if (Math.hypot(x - 60, z - 12) > 11.5) continue;
-        for (let y = 1; y <= 17; y++) w.set(x, y, z, y > 14 ? (y % 3 === 0 ? B.CLAY : B.REDSAND) : B.SANDSTONE);
-        for (let y = 18; y < w.H; y++) w.set(x, y, z, B.AIR);
+      // passage naturel dans la montagne : gorge sinueuse de la crevasse (derrière la pyramide) jusqu'au coin nord-ouest
+      gorge(w, [[41, 4], [35, 6], [29, 3.5], [22, 5.5], [15, 3.5], [8, 5.5], [3, 7]], 5, rnd);
+      // socle de la pyramide : mesa au contour irrégulier, mêmes strates que le canyon, falaises en gradins
+      const pn = G.makeNoise(244), PCX = 60, PCZ = 12;
+      const rimR = (a) => 10.2 + 3.2 * pn(Math.cos(a) * 1.3 + 3, Math.sin(a) * 1.3 + 3);
+      for (let z = 0; z < 36; z++) for (let x = 40; x < 80; x++) {
+        const d = Math.hypot(x - PCX, z - PCZ), a = Math.atan2(z - PCZ, x - PCX), R = rimR(a);
+        let h = 17;
+        if (d > R) {
+          const sl = 1.4 + 2.8 * pn(Math.cos(a) * 2.2 + 9, Math.sin(a) * 2.2 + 9);
+          h = Math.round(17 - (d - R) * sl - (pn(x * 0.4 + 20, z * 0.4) - 0.5) * 2.2);
+          if (h <= w.top(x, z)) continue;
+        }
+        for (let y = 1; y <= h; y++) w.set(x, y, z, y > 8 ? (y % 3 === 0 ? B.CLAY : B.REDSAND) : y > h - 3 ? B.SAND : B.SANDSTONE);
+        for (let y = h + 1; y < w.H; y++) w.set(x, y, z, B.AIR);
       }
-      for (let i = 0; i < 13; i++) for (let x = 58; x <= 62; x++) {
-        const z = 23 + i, top = Math.max(6, 17 - i);
-        for (let y = 1; y <= top; y++) w.set(x, y, z, y === top ? B.SANDSTONE : B.SAND);
-        for (let y = top + 1; y < w.H; y++) w.set(x, y, z, B.AIR);
-      }
+      // sentier de pierre qui serpente du plateau jusqu'au sable (remplace la rampe droite)
+      let ez = PCZ; while (w.top(PCX, ez + 1) >= 17) ez++;
+      trail(w, [[PCX, ez - 1], [PCX + 5, ez + 3], [PCX - 3, ez + 7], [PCX + 1, ez + 11], [PCX - 1, ez + 14]], 17, rnd);
       // pyramide au sommet, chambre funéraire et portail
       for (let lv = 0; lv < 7; lv++) { const r = 6 - lv; w.fill(60 - r, 18 + lv, 12 - r, 60 + r, 18 + lv, 12 + r, lv === 6 ? B.GLOW : lv % 2 ? B.SANDSTONE : B.CHISELED); }
       w.fill(57, 18, 9, 63, 20, 15, B.AIR);
@@ -586,11 +717,12 @@ G.Maps = (function () {
     sky: [0x070b1a, 0x24304e], fog: [0x26324e, 14, 58], hemi: [0x9ab0e0, 0x202838, 0.6], sun: [0xc0d0ff, 0.5], weather: 'snow', stars_: true,
     build(w, rnd) {
       const n = G.makeNoise(303);
+      // colline au sommet plat (comme au village), le mirador est posé dessus
       terrain(w, (x, z) => {
-        let h = 6 + (n(x * 0.06, z * 0.06) - 0.5) * 8;
-        const mt = Math.max(0, 1 - Math.hypot(x - 64, z - 62) / 17); h += mt * 15;
-        return h;
-      }, (x, y, z, h) => (y === h ? (h > 14 ? B.SNOW : B.SNOW) : y > h - 3 ? B.DIRT : B.STONE));
+        const base = 6 + (n(x * 0.06, z * 0.06) - 0.5) * 8;
+        const dh = Math.hypot(x - 64, z - 62), k = dh < 7 ? 1 : Math.max(0, 1 - (dh - 7) / 12), sm = k * k * (3 - 2 * k);
+        return base * (1 - sm) + 19 * sm + (dh < 7 ? 0 : (n(x * 0.3, z * 0.3) - 0.5) * 1.5 * sm);
+      }, (x, y, z, h) => (y === h ? B.SNOW : y > h - 3 ? B.DIRT : B.STONE));
       flatten(w, 40, 40, 15, 6, B.SNOW, B.DIRT);
       const x0 = 30, x1 = 50, z0 = 30, z1 = 50;
       for (let y = 7; y <= 10; y++) {
@@ -604,21 +736,15 @@ G.Maps = (function () {
       for (let x = x0 + 1; x < x1; x++) { w.set(x, 10, z0 + 1, B.PLANKS); w.set(x, 10, z1 - 1, B.PLANKS); }
       stairs(w, x0 + 4, z0 + 2, 6, 3, 1, 0, B.PLANKS, 1, 3); stairs(w, x1 - 4, z1 - 2, 6, 3, -1, 0, B.PLANKS, 1, 2);
       for (const [tx, tz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) { w.fill(tx - 1, 7, tz - 1, tx + 1, 12, tz + 1, B.COBBLE); w.set(tx, 13, tz, B.GLOW); }
-      house(w, 34, 34, 6, 5, 6, 'e', B.PLANKS, B.LOG, B.SNOW_BLOCK);
-      house(w, 42, 43, 6, 5, 6, 'w', B.PLANKS, B.LOG, B.SNOW_BLOCK);
-      house(w, 32, 42, 6, 5, 6, 'e', B.STONEBRICK, B.LOG, B.SNOW_BLOCK); // armurerie
+      // toits en vrais blocs (bois, pierre) recouverts d'une couche de neige
+      house(w, 34, 34, 6, 5, 6, 'e', B.PLANKS, B.LOG, B.DARK_LOG); snowCap(w, 33, 33, 40, 39);
+      house(w, 42, 43, 6, 5, 6, 'w', B.PLANKS, B.LOG, B.DARK_LOG); snowCap(w, 41, 42, 48, 48);
+      house(w, 32, 42, 6, 5, 6, 'e', B.STONEBRICK, B.LOG, B.COBBLE); snowCap(w, 31, 41, 38, 47); // armurerie
       for (const [x, z] of [[37, 41], [44, 38], [40, 22], [40, 58], [22, 40], [58, 40]]) { const t = w.top(x, z); w.set(x, t + 1, z, B.LOG); w.set(x, t + 2, z, B.LOG); w.set(x, t + 3, z, B.GLOW); }
       // lac gelé
       ellipse(16, 18, 12, 8, (x, z) => { const t = w.top(x, z); for (let y = t + 1; y < w.H; y++) w.set(x, y, z, B.AIR); w.set(x, t, z, B.ICE); });
       // chalets
-      for (const [cx, cz, d] of [[10, 52, 'e'], [18, 66, 'n'], [60, 14, 's']]) { const t = w.top(cx + 2, cz + 2); flatten(w, cx + 2, cz + 2, 5, t, B.SNOW, B.DIRT); house(w, cx, cz, 5, 5, t, d, B.LOG, B.LOG, B.SNOW_BLOCK); }
-      // belvédère au sommet de la montagne
-      const mt = w.top(64, 62);
-      for (let x = 61; x <= 67; x++) for (let z = 59; z <= 65; z++) { const t = w.top(x, z); for (let y = t + 1; y < mt; y++) w.set(x, y, z, (x + y + z) % 3 ? B.STONE : B.COBBLE); }
-      w.fill(61, mt, 59, 67, mt, 65, B.PLANKS);
-      for (const [x, z] of [[61, 59], [67, 59], [61, 65], [67, 65]]) for (let y = mt + 1; y <= mt + 3; y++) w.set(x, y, z, B.LOG);
-      w.fill(61, mt + 4, 59, 67, mt + 4, 65, B.SNOW_BLOCK); w.set(64, mt + 3, 62, B.GLOW);
-      w.belvedere = mt;
+      for (const [cx, cz, d] of [[10, 52, 'e'], [18, 66, 'n'], [60, 14, 's']]) { const t = w.top(cx + 2, cz + 2); flatten(w, cx + 2, cz + 2, 5, t, B.SNOW, B.DIRT); house(w, cx, cz, 5, 5, t, d, B.LOG, B.LOG, B.PLANKS); snowCap(w, cx - 1, cz - 1, cx + 5, cz + 5); }
       // forêts denses : sol de terre et d'aiguilles, arbres plus hauts et plus gros
       for (const [fx, fz, rx, rz] of [[15, 37, 11, 10], [65, 30, 10, 9]]) {
         ellipse(fx, fz, rx, rz, (x, z, d) => { const t = w.top(x, z); if (w.get(x, t, z) === B.SNOW && (d < 0.8 || rnd() < 0.6)) w.set(x, t, z, rnd() < 0.12 ? B.SNOW : B.PODZOL); });
@@ -636,7 +762,7 @@ G.Maps = (function () {
       decorate(w, rnd, B.PODZOL, [[B.TALLGRASS, 0.18], [B.DEADBUSH, 0.03]]);
       for (let i = 0; i < 120; i++) {
         const x = 3 + Math.floor(rnd() * 74), z = 3 + Math.floor(rnd() * 74);
-        if (Math.hypot(x - 40, z - 40) < 18) continue;
+        if (Math.hypot(x - 40, z - 40) < 18 || Math.hypot(x - 64, z - 62) < 11) continue;
         const t = w.top(x, z);
         if (!canTree(w, x, z, t, B.SNOW)) continue;
         const r = rnd();
@@ -645,21 +771,23 @@ G.Maps = (function () {
       }
       for (let i = 0; i < 24; i++) {
         const x = 3 + Math.floor(rnd() * 74), z = 3 + Math.floor(rnd() * 74);
-        if (Math.hypot(x - 40, z - 40) < 17) continue;
+        if (Math.hypot(x - 40, z - 40) < 17 || Math.hypot(x - 64, z - 62) < 10) continue;
         const t = w.top(x, z); if (w.get(x, t, z) !== B.SNOW) continue;
         w.set(x, t + 1, z, B.STONE); if (rnd() < 0.5) w.set(x + 1, t + 1, z, B.MOSSY);
       }
-      covers(w, rnd, 16, { avoid: [[40, 40, 8], [64, 62, 6], [12, 54, 5]], surfaces: [B.SNOW], kinds: ['sand', 'crates', 'rock'] });
+      covers(w, rnd, 16, { avoid: [[40, 40, 8], [64, 62, 10], [12, 54, 5], [61, 44, 5]], surfaces: [B.SNOW], kinds: ['sand', 'crates', 'rock'] });
       pebbles(w, rnd, [B.SNOW], 160);
       decorate(w, rnd, B.SNOW, [[B.DEADBUSH, 0.01]]);
+      const P = mirador(w);
+      this.stations.find((s) => s.weapon === 'sniper').floorY = P + 1;
     },
-    player: [38, 39],
+    player: [40, 40],
     stations: [
       { type: 'box', x: 43, z: 44 },
       { type: 'wall', weapon: 'smg', x: 38, z: 35 },
       { type: 'wall', weapon: 'shotgun', x: 46, z: 44 },
       { type: 'wall', weapon: 'rifle', x: 33, z: 43 },
-      { type: 'wall', weapon: 'sniper', x: 63, z: 61 },
+      { type: 'wall', weapon: 'sniper', x: 63, z: 61 }, // sur la plateforme du mirador
       { type: 'perk', perk: 'cuirasse', x: 35, z: 37, wave: 1 },
       { type: 'perk', perk: 'souffle', x: 46, z: 46, wave: 2 },
       { type: 'perk', perk: 'rafale', x: 33, z: 45, wave: 3 },
@@ -858,7 +986,7 @@ G.Maps = (function () {
   // ---------- 5. Ville ----------
   const ROADS = [22, 48, 74, 100];
   list.push({
-    id: 'ville', name: 'Ville Fantôme', desc: 'Ville dévastée : immeubles visitables, quartier serré de ruelles, cratère, égouts sous les rues.', stars: 3, rpMult: 1.35, size: 128, height: 48,
+    id: 'ville', name: 'Ville Fantôme', desc: 'Ville dévastée : vieux quartier haussmannien et new-yorkais, ruelles, place à la statue, cratère, égouts.', stars: 3, rpMult: 1.35, size: 128, height: 48,
     sky: [0x6a7a90, 0xb8bec4], fog: [0xa8aeb4, 24, 110], hemi: [0xd6dce2, 0x4a4a50, 0.72], sun: [0xf6eee0, 0.8], weather: null,
     build(w, rnd) {
       const g = 12, S = 128;
@@ -927,28 +1055,38 @@ G.Maps = (function () {
       const plan = [
         ['tower6', 'apart4', 'shopPark', 'apart3'],
         ['parking', 'tower7', 'apart5', 'tower6'],
-        ['apart4', 'shopPark', 'park', 'shop'],
-        ['park', 'tower5', 'apart3', 'tower6'],
+        ['apart4', 'shopPark', 'place', 'paris6'],
+        ['park', 'tower5', 'paris5', 'ny7'],
       ];
       const damaged = new Set(['0,0', '3,1', '1,3', '3,3', '2,0']);
       for (let bz = 0; bz < 5; bz++) for (let bx = 0; bx < 5; bx++) {
         const [xa, xb] = blocks[bx], [za, zb] = blocks[bz];
         const x0 = xa + 1, x1 = xb - 1, z0 = za + 1, z1 = zb - 1;
         if (bx === 4 || bz === 4) {
-          // quartier serré façon New York / Paris : immeubles étroits, ruelles, graffitis, escaliers de secours
+          // vieux quartier serré : immeubles haussmanniens côté boulevard, immeubles new-yorkais derrière,
+          // ruelles de 3 blocs avec escaliers de secours, poubelles et graffitis
           for (let z = za; z <= zb; z++) for (let x = xa; x <= xb; x++) w.set(x, g, z, rnd() < 0.15 ? B.ASPHALT_CRACK : B.COBBLE);
-          const xs = bx === 4 ? [[107, 115], [118, 126]] : [[x0, x1]];
-          const zs = bz === 4 ? [[107, 115], [118, 126]] : [[z0, z1]];
-          for (const [ax, bxx] of xs) for (const [az, bzz] of zs) {
-            const nf = 4 + Math.floor(rnd() * 4);
-            building(w, ax, az, bxx, bzz, nf, { g, wall: rnd() < 0.5 ? B.BRICK : B.STONEBRICK, floor: B.PLANKS, stair: B.PLANKS, graffiti: true, damaged: rnd() < 0.4, fireEscape: bx === 4 ? (ax === 107 ? 'e' : null) : (rnd() < 0.5 ? 'e' : 'w') }, rnd);
+          const xs = bx === 4 ? [[106, 114], [118, 126]] : [[x0, x1]];
+          const zs = bz === 4 ? [[106, 114], [118, 126]] : [[z0, z1]];
+          for (const [ax, axx] of xs) for (const [az, azz] of zs) {
+            const alleys = [];
+            if (bx === 4) alleys.push(ax === 106 ? 'e' : 'w');
+            if (bz === 4) alleys.push(az === 106 ? 's' : 'n');
+            const paris = (bx !== 4 || ax === 106) && (bz !== 4 || az === 106);
+            if (paris) building(w, ax, az, axx, azz, 5 + Math.floor(rnd() * 2), { g, style: 'paris', wall: B.LIMESTONE, floor: B.PLANKS, stair: B.PLANKS, alleys, damaged: rnd() < 0.3 }, rnd);
+            else {
+              const fe = alleys.includes('w') ? 'w' : alleys.includes('n') ? 'n' : alleys[0];
+              const wall = G.pick([B.BROWNSTONE, B.BRICK, B.LIMESTONE]);
+              building(w, ax, az, axx, azz, 5 + Math.floor(rnd() * 3), { g, style: 'ny', wall, trim: B.CONCRETE_DARK, band: wall === B.LIMESTONE ? 'concrete' : 'limestone', floor: B.PLANKS, stair: B.PLANKS, alleys, damaged: rnd() < 0.35, fireEscape: fe }, rnd);
+            }
           }
-          // poubelles et caisses dans les ruelles
-          for (let i = 0; i < 6; i++) { const x = bx === 4 ? 116 + (i % 2) : x0 + Math.floor(rnd() * (x1 - x0)), z = bz === 4 ? 116 + (i % 2) : z0 + Math.floor(rnd() * (z1 - z0)); if (!w.get(x, g + 1, z) && x > 0 && z > 0 && x < S - 1 && z < S - 1) w.set(x, g + 1, z, G.pick([B.BIN, B.BIN, B.CRATE, B.BARREL])); }
           continue;
         }
         const type = plan[bz][bx], dmg = damaged.has(bx + ',' + bz);
-        if (type.startsWith('tower')) building(w, x0, z0, x1, z1, Number(type.slice(5)), { g, wall: B.CONCRETE_DARK, floor: B.CONCRETE, glassFull: true, damaged: dmg }, rnd);
+        if (type.startsWith('paris')) building(w, x0, z0, x1, z1, Number(type.slice(5)), { g, style: 'paris', wall: B.LIMESTONE, floor: B.PLANKS, stair: B.PLANKS, damaged: dmg }, rnd);
+        else if (type.startsWith('ny')) building(w, x0, z0, x1, z1, Number(type.slice(2)), { g, style: 'ny', wall: B.LIMESTONE, trim: B.CONCRETE_DARK, band: 'concrete', floor: B.CONCRETE, stair: B.CONCRETE, damaged: dmg, fireEscape: 'w' }, rnd);
+        else if (type === 'place') place(w, xa, za, xb, zb, g, rnd);
+        else if (type.startsWith('tower')) building(w, x0, z0, x1, z1, Number(type.slice(5)), { g, wall: B.CONCRETE_DARK, floor: B.CONCRETE, glassFull: true, damaged: dmg }, rnd);
         else if (type.startsWith('apart')) building(w, x0 + 1, z0 + 1, x1 - 1, z1 - 1, Number(type.slice(5)), { g, wall: B.BRICK, floor: B.PLANKS, stair: B.PLANKS, damaged: dmg }, rnd);
         else if (type === 'shop') { shop(w, x0 + 2, z0 + 2, x1 - 2, z1 - 6, g, B.WHITEWALL); }
         else if (type === 'shopPark') {
@@ -965,6 +1103,25 @@ G.Maps = (function () {
           for (let i = 0; i < 9; i++) { const x = x0 + 1 + Math.floor(rnd() * (x1 - x0 - 2)), z = z0 + 1 + Math.floor(rnd() * (z1 - z0 - 2)); if (Math.hypot(x - cx - 2, z - cz - 2) < 6) continue; if (canTree(w, x, z, g, B.GRASS)) (rnd() < 0.5 ? tree : deadTree)(w, x, g, z, rnd); }
           for (let x = x0 + 1; x < x1; x += 4) w.set(x, g + 1, z0 + 1, B.PLANKS);
         }
+      }
+      // ruelles du vieux quartier : graffitis peints sur les murs côté ruelle uniquement, poubelles contre un mur
+      const tags = ['tag1', 'tag2', 'tag3'];
+      const tagWall = (x, z, wx, wz, nx, nz) => {
+        for (let y = g + 1; y <= g + 4; y++) {
+          const b = w.get(wx, y, wz);
+          if (!b || b === B.GLASS || !G.BLOCKS[b].opaque || w.get(x, y, z)) continue;
+          if (rnd() > (y <= g + 2 ? 0.45 : 0.18)) continue;
+          const tile = G.pick(tags);
+          if (nx) { const X = nx > 0 ? wx + 1 + 0.01 : wx - 0.03; w.details.push({ box: true, x0: X, y0: y, z0: z, x1: X + 0.02, y1: y + 1, z1: z + 1, tile }); }
+          else { const Z = nz > 0 ? wz + 1 + 0.01 : wz - 0.03; w.details.push({ box: true, x0: x, y0: y, z0: Z, x1: x + 1, y1: y + 1, z1: Z + 0.02, tile }); }
+        }
+      };
+      for (let a = 1; a < S - 1; a++) {
+        if (onRoad(a) || onWalk(a)) continue;
+        // ruelle nord-sud (x 115..117) et ruelle est-ouest (z 115..117)
+        tagWall(115, a, 114, a, 1, 0); tagWall(117, a, 118, a, -1, 0);
+        tagWall(a, 115, a, 114, 0, 1); tagWall(a, 117, a, 118, 0, -1);
+        if (a < 114 || a > 118) for (const [x, z] of [[115, a], [a, 115]]) if (rnd() < 0.1 && !w.get(x, g + 1, z) && w.isSolid(x, g, z) && !w.get(x, g + 2, z)) w.set(x, g + 1, z, G.pick([B.BIN, B.BIN, B.CRATE, B.BARREL]));
       }
       // routes cassées : nids-de-poule et gravats
       for (let i = 0; i < 26; i++) {
@@ -1003,8 +1160,10 @@ G.Maps = (function () {
         if (onRoad(a)) continue;
         for (const [x, z, ax, az] of [[c - 4, a, 1, 0], [a, c + 4, 0, -1]]) {
           if (w.get(x, g + 1, z) || w.get(x, g, z) !== B.SIDEWALK) continue;
-          w.details.push({ box: true, x0: x + 0.42, y0: g + 1, z0: z + 0.42, x1: x + 0.58, y1: g + 4.9, z1: z + 0.58, tile: 'concrete_dark' });
-          w.details.push({ box: true, x0: x + 0.4 + Math.min(0, ax) * 1.2, y0: g + 4.75, z0: z + 0.4 + Math.min(0, az) * 1.2, x1: x + 0.6 + Math.max(0, ax) * 1.2, y1: g + 4.9, z1: z + 0.6 + Math.max(0, az) * 1.2, tile: 'metal' });
+          // vieux quartier : réverbères noirs à lanterne
+          if (x >= 52 && z >= 52 || x >= 104 || z >= 104) { parisLamp(w, x, g, z); continue; }
+          dbox(w, x + 0.42, g + 1, z + 0.42, x + 0.58, g + 4.9, z + 0.58, 'concrete_dark');
+          dbox(w, x + 0.4 + Math.min(0, ax) * 1.2, g + 4.75, z + 0.4 + Math.min(0, az) * 1.2, x + 0.6 + Math.max(0, ax) * 1.2, g + 4.9, z + 0.6 + Math.max(0, az) * 1.2, 'metal');
           const lx = x + 0.5 + ax * 1.25, lz = z + 0.5 + az * 1.25;
           w.details.push({ box: true, x0: lx - 0.22, y0: g + 4.45, z0: lz - 0.22, x1: lx + 0.22, y1: g + 4.75, z1: lz + 0.22, tile: 'glowstone', bright: true });
           w.details.push({ box: true, x0: x + 0.35, y0: g + 1, z0: z + 0.35, x1: x + 0.65, y1: g + 1.3, z1: z + 0.65, tile: 'concrete_dark' });
@@ -1017,7 +1176,7 @@ G.Maps = (function () {
         for (let y = g + 1; y <= g + 4; y++) w.set(x, y, z, i % 6 === 0 ? B.CONCRETE_DARK : B.WALLPANEL);
         w.set(x, g + 5, z, i % 6 === 0 ? B.CONCRETE_DARK : B.BARBED);
       }
-      covers(w, rnd, 34, { avoid: [[48, 48, 4], [74, 36, 8]], surfaces: [B.ASPHALT, B.ASPHALT_LINE, B.SIDEWALK, B.CONCRETE, B.COBBLE], kinds: ['barrier', 'sand', 'barrier', 'crates'] });
+      covers(w, rnd, 34, { avoid: [[48, 48, 4], [74, 36, 8], [61, 61, 9]], surfaces: [B.ASPHALT, B.ASPHALT_LINE, B.SIDEWALK, B.CONCRETE, B.COBBLE], kinds: ['barrier', 'sand', 'barrier', 'crates'] });
       pebbles(w, rnd, [B.ASPHALT, B.SIDEWALK, B.CONCRETE, B.GRASS, B.COBBLE], 320, 'concrete_dark');
       decorate(w, rnd, B.GRASS, [[B.TALLGRASS, 0.2], [B.DEADBUSH, 0.04]]);
     },
@@ -1051,7 +1210,7 @@ G.Maps = (function () {
   });
 
   // vue de dessus colorée (mini-carte et vignettes)
-  const COLS = { 1: 0x5fa83a, 2: 0x8a5a35, 3: 0x7d7d7d, 4: 0x8a8a8a, 5: 0x6b4c2c, 6: 0xa98653, 7: 0x3e7d24, 8: 0xdccf8e, 9: 0xd2bf7e, 10: 0xf2f6fa, 11: 0x9cc7f0, 12: 0x9c4a3a, 13: 0x3b3a40, 14: 0x2d1f40, 15: 0xf06a10, 16: 0x2e64c8, 17: 0xffe080, 18: 0x2f7424, 19: 0x2b5a3a, 20: 0xc6c9cc, 21: 0x857f7b, 23: 0x4a1a20, 24: 0xb58a4e, 25: 0xd6b23a, 26: 0x7a7a7a, 27: 0x5c7a44, 28: 0xa04010, 29: 0xb8643a, 30: 0x5fa83a, 31: 0x5fa83a, 32: 0x5aa03a, 33: 0xd8b040, 34: 0xa08050, 35: 0x6a4426, 36: 0x9a7a48, 37: 0x3a3b3e, 38: 0x4a4b3e, 39: 0xb0b0aa, 40: 0xa8a6a0, 41: 0x6a6a6e, 42: 0x8ab0c8, 43: 0x5a5e52, 44: 0x4a3a3e, 45: 0x303030, 46: 0xb02020, 47: 0x2050b0, 48: 0xd8d8d8, 49: 0xc03030, 50: 0xe2ddd2, 52: 0x8a6a40, 53: 0xe8eef4, 54: 0xb06a40 };
+  const COLS = { 1: 0x5fa83a, 2: 0x8a5a35, 3: 0x7d7d7d, 4: 0x8a8a8a, 5: 0x6b4c2c, 6: 0xa98653, 7: 0x3e7d24, 8: 0xdccf8e, 9: 0xd2bf7e, 10: 0xf2f6fa, 11: 0x9cc7f0, 12: 0x9c4a3a, 13: 0x3b3a40, 14: 0x2d1f40, 15: 0xf06a10, 16: 0x2e64c8, 17: 0xffe080, 18: 0x2f7424, 19: 0x2b5a3a, 20: 0xc6c9cc, 21: 0x857f7b, 23: 0x4a1a20, 24: 0xb58a4e, 25: 0xd6b23a, 26: 0x7a7a7a, 27: 0x5c7a44, 28: 0xa04010, 29: 0xb8643a, 30: 0x5fa83a, 31: 0x5fa83a, 32: 0x5aa03a, 33: 0xd8b040, 34: 0xa08050, 35: 0x6a4426, 36: 0x9a7a48, 37: 0x3a3b3e, 38: 0x4a4b3e, 39: 0xb0b0aa, 40: 0xa8a6a0, 41: 0x6a6a6e, 42: 0x8ab0c8, 43: 0x5a5e52, 44: 0x4a3a3e, 45: 0x303030, 46: 0xb02020, 47: 0x2050b0, 48: 0xd8d8d8, 49: 0xc03030, 50: 0xe2ddd2, 52: 0x8a6a40, 53: 0xe8eef4, 54: 0xb06a40, 89: 0xf2f6fa, 91: 0xd9cfb6, 92: 0x6e7883, 93: 0x7a4c3a };
   function topDown(w) {
     const c = document.createElement('canvas'); c.width = w.W; c.height = w.D;
     const ctx = c.getContext('2d');
@@ -1129,11 +1288,67 @@ G.Maps = (function () {
       }
     }
   }
-  // désert : chemin de pierre naturel et sinueux qui descend du plateau de la pyramide vers l'ouest,
-  // et comblement des crevasses où l'on restait bloqué
+  // sentier naturel et sinueux qui suit une ligne brisée en descendant (jamais plus d'un bloc d'un coup)
+  function trail(w, pts, hA, rnd) {
+    const seg = []; let L = 0;
+    for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(l); L += l; }
+    const at = (s) => { let i = 0; while (i < seg.length - 1 && s > seg[i]) { s -= seg[i]; i++; } const k = Math.min(1, s / seg[i]); return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * k, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * k]; };
+    const end = pts[pts.length - 1], hB = w.top(Math.round(end[0]), Math.round(end[1]));
+    let prevH = hA;
+    for (let s = 0; s <= L; s += 0.35) {
+      const t = s / L, [qx, qz] = at(s);
+      const px = qx + Math.sin(t * 9.1) * 0.7, pz = qz + Math.cos(t * 7.3) * 0.7;
+      let h = Math.round(hA + (hB - hA) * Math.pow(t, 0.9));
+      if (h < prevH - 1) h = prevH - 1; prevH = h;
+      const rad = 1.3 + Math.sin(t * 17) * 0.45 + rnd() * 0.4;
+      const strata = (y, top) => (y > 8 ? (y % 3 === 0 ? B.CLAY : B.REDSAND) : y === top ? B.SAND : B.SANDSTONE);
+      // éperon rocheux sous le sentier : flancs en pente, mêmes strates que la mesa
+      for (let x = Math.floor(px - rad - 4); x <= Math.ceil(px + rad + 4); x++) for (let z = Math.floor(pz - rad - 4); z <= Math.ceil(pz + rad + 4); z++) {
+        const dd = Math.hypot(x - px, z - pz); if (dd <= rad) continue;
+        const fh = Math.round(h - (dd - rad) * (1.5 + 0.6 * Math.sin(x * 1.7 + z * 2.3)));
+        const top = w.top(x, z); if (fh <= top) continue;
+        for (let y = top + 1; y <= fh; y++) w.set(x, y, z, strata(y, fh));
+      }
+      for (let x = Math.floor(px - rad); x <= Math.ceil(px + rad); x++) for (let z = Math.floor(pz - rad); z <= Math.ceil(pz + rad); z++) {
+        if (Math.hypot(x - px, z - pz) > rad) continue;
+        const top = w.top(x, z);
+        for (let y = h + 1; y <= Math.max(top, h + 3); y++) if (w.get(x, y, z) !== B.WATER) w.set(x, y, z, B.AIR);
+        for (let y = Math.min(top, h); y <= h; y++) w.set(x, y, z, y === h ? G.pick([B.STONE, B.STONE, B.GRAVEL, B.COBBLE, B.SANDSTONE]) : strata(y, -1));
+      }
+      if (rnd() < 0.22) { const a = rnd() * Math.PI * 2, bx = Math.round(px + Math.cos(a) * (rad + 1)), bz = Math.round(pz + Math.sin(a) * (rad + 1)); const tt = w.top(bx, bz); if (tt >= h && tt <= h + 2) w.set(bx, tt + 1, bz, rnd() < 0.5 ? B.ROCK : B.STONE); }
+    }
+  }
+  // gorge : couloir naturel creusé dans la mesa, parois en V irrégulières, arche de roche au milieu
+  function gorge(w, pts, fy, rnd) {
+    const gn = G.makeNoise(515);
+    const seg = []; let L = 0;
+    for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(l); L += l; }
+    const at = (s) => { let i = 0; while (i < seg.length - 1 && s > seg[i]) { s -= seg[i]; i++; } const k = Math.min(1, s / seg[i]); return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * k, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * k]; };
+    const archX = Math.round(at(L * 0.48)[0]);
+    for (let s = 0; s <= L; s += 0.3) {
+      const [px, pz] = at(s);
+      const w0 = 1.25 + 0.55 * gn(s * 0.22, 1.5);
+      for (let y = fy + 1; y < w.H; y++) {
+        const r = w0 + (y - fy) * 0.1 + (y > fy + 5 ? 0.45 * gn(s * 0.3, y * 0.3) : 0);
+        for (let x = Math.floor(px - r); x <= Math.ceil(px + r); x++) for (let z = Math.floor(pz - r); z <= Math.ceil(pz + r); z++) {
+          if (Math.hypot(x - px, z - pz) > r) continue;
+          if (y >= fy + 8 && x >= archX - 1 && x <= archX + 1) continue; // arche naturelle
+          w.set(x, y, z, B.AIR);
+        }
+      }
+      // sol : sable, gravier et terre rouge
+      for (let x = Math.floor(px - w0 - 0.5); x <= Math.ceil(px + w0 + 0.5); x++) for (let z = Math.floor(pz - w0 - 0.5); z <= Math.ceil(pz + w0 + 0.5); z++) {
+        const dd = Math.hypot(x - px, z - pz); if (dd > w0 + 0.5) continue;
+        for (let y = 1; y < fy; y++) if (!w.isSolid(x, y, z)) w.set(x, y, z, B.SANDSTONE);
+        if (w.get(x, fy, z) !== B.ROCK) { const v = gn(x * 0.35 + 40, z * 0.35); w.set(x, fy, z, v > 0.66 ? B.GRAVEL : v < 0.3 ? B.REDSAND : B.SAND); }
+      }
+      // éboulis contre les parois
+      if (rnd() < 0.12) { const side = rnd() < 0.5 ? -1 : 1, i0 = Math.min(seg.length - 1, Math.floor(s / (L / seg.length))); const dx = pts[i0 + 1][0] - pts[i0][0], dz = pts[i0 + 1][1] - pts[i0][1], l = Math.hypot(dx, dz) || 1; const bx = Math.round(px - dz / l * side * (w0 + 0.3)), bz = Math.round(pz + dx / l * side * (w0 + 0.3)); if (!w.get(bx, fy + 1, bz) && Math.hypot(bx - px, bz - pz) > 1.1) w.set(bx, fy + 1, bz, rnd() < 0.6 ? B.ROCK : B.SANDSTONE); }
+    }
+  }
+  // désert : chemin de pierre qui descend du plateau de la pyramide vers l'ouest, puis comblement des cuvettes
   function desertPath(w, rnd) {
-    fillPits(w, 0, 0, 79, 30, ['s'], B.REDSAND, B.SANDSTONE);
-    // chemin sinueux : du bord ouest du plateau jusqu'au sol au sud-ouest
+    fillPits(w, 0, 0, 79, 36, ['s'], B.REDSAND, B.SANDSTONE);
     const A = [49, 13], Bp = [33, 31];
     const hA = 17, hB = w.top(Bp[0], Bp[1]);
     let prevH = hA;
@@ -1149,43 +1364,103 @@ G.Maps = (function () {
         for (let y = h + 1; y <= Math.max(top, h + 3); y++) if (w.get(x, y, z) !== B.WATER) w.set(x, y, z, B.AIR);
         for (let y = Math.min(top, h); y <= h; y++) w.set(x, y, z, y === h ? G.pick([B.STONE, B.STONE, B.GRAVEL, B.COBBLE, B.SANDSTONE]) : B.STONE);
       }
-      // rochers et marches irrégulières sur les bords
       if (rnd() < 0.25) { const a = rnd() * Math.PI * 2, bx = Math.round(px + Math.cos(a) * (rad + 1)), bz = Math.round(pz + Math.sin(a) * (rad + 1)); const tt = w.top(bx, bz); if (tt >= h) { w.set(bx, tt + 1, bz, rnd() < 0.5 ? B.ROCK : B.STONE); } }
     }
   }
-  // toundra : escalier vers le belvédère, salle en dessous et mine qui ressort au pied de la montagne
-  function belvedereMine(w, mt) {
-    // escalier extérieur (côté sud)
-    let n = 1; for (; n <= 9; n++) if (w.top(63, 65 + n) <= mt - n + 1) break;
-    stairs(w, 63, 65 + n, mt - n, n, 0, -1, B.COBBLE, 2);
-    // salle sous le belvédère
-    w.fill(62, mt - 4, 60, 66, mt - 1, 64, B.AIR);
-    w.fill(62, mt - 5, 60, 66, mt - 5, 64, B.PLANKS);
-    for (const [x, z] of [[62, 60], [66, 60], [62, 64], [66, 64]]) for (let y = mt - 4; y <= mt - 1; y++) w.set(x, y, z, B.LOG);
-    w.set(64, mt - 1, 64, B.GLOW); w.set(65, mt - 4, 63, B.CRATE); w.set(65, mt - 4, 62, B.BARREL);
-    // trappe + escalier qui descend du plancher du belvédère dans la salle
-    stairs(w, 62, 61, mt - 5, 5, 1, 0, B.PLANKS, 1);
-    // galerie de mine en pente vers l'ouest, puis à plat jusqu'à la sortie
-    let fy = mt - 5, x = 61;
-    for (let guard = 0; guard < 60 && x > 2; guard++, x--) {
-      const z0 = 61, z1 = 62;
-      const nextFy = Math.max(6, fy - 1);
-      const sloping = nextFy < fy;
-      fy = nextFy;
-      for (let z = z0 - 1; z <= z1 + 1; z++) for (let y = fy; y <= fy + 4; y++) if (!w.isSolid(x, y, z) && (z < z0 || z > z1 || y === fy || y === fy + 4)) w.set(x, y, z, B.STONE);
-      for (let z = z0; z <= z1; z++) { w.set(x, fy, z, B.GRAVEL); for (let y = fy + 1; y <= fy + 3; y++) w.set(x, y, z, B.AIR); }
-      if (sloping) for (let z = z0; z <= z1; z++) w.setStair(x, fy, z, B.STAIR_STONE, 0);
-      // boisage tous les 3 blocs, lanternes
-      if (x % 3 === 0) { for (let y = fy + 1; y <= fy + 3; y++) { w.set(x, y, z0 - 1, B.LOG); w.set(x, y, z1 + 1, B.LOG); } for (let z = z0 - 1; z <= z1 + 1; z++) w.set(x, fy + 4, z, B.PLANKS); }
-      if (x % 6 === 0) w.set(x, fy + 3, z0 - 1, B.GLOW);
-      w.details.push({ box: true, x0: x, y0: fy + 1, z0: z0 + 0.15, x1: x + 1, y1: fy + 1.06, z1: z0 + 0.25, tile: 'metal' });
-      w.details.push({ box: true, x0: x, y0: fy + 1, z0: z1 + 0.75, x1: x + 1, y1: fy + 1.06, z1: z1 + 0.85, tile: 'metal' });
-      // sortie : le terrain au-dessus n'est plus plus haut que la galerie
-      if (fy === 6 && w.top(x - 1, z0) <= fy + 1 && w.top(x - 2, z0) <= fy + 1) {
-        for (let k = 1; k <= 2; k++) for (let z = z0; z <= z1; z++) for (let y = fy + 1; y <= fy + 4; y++) w.set(x - k, y, z, B.AIR);
-        break;
+  // couche de neige posée sur les toits (détail fin, le toit reste en vrais blocs)
+  function snowCap(w, x0, z0, x1, z1) {
+    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+      const t = w.top(x, z), b = w.get(x, t, z);
+      if (t < 0 || b === B.SNOW || b === B.SNOW_BLOCK || b === B.ICE || G.BLOCKS[b].liquid) continue;
+      w.details.push({ box: true, x0: x, y0: t + 1, z0: z, x1: x + 1, y1: t + 1.14, z1: z + 1, tile: 'snow' });
+    }
+  }
+  // toundra : mirador sur pilotis au sommet de la colline, escalier qui tourne autour,
+  // trappe vers une cave creusée dans la colline et galerie de mine qui ressort au pied de la colline
+  function mirador(w) {
+    const T = w.top(64, 62), X0 = 62, X1 = 66, Z0 = 60, Z1 = 64, P = T + 8;
+    for (let z = Z0 - 2; z <= Z1 + 2; z++) for (let x = X0 - 2; x <= X1 + 2; x++) for (let y = T + 1; y <= P + 7; y++) w.set(x, y, z, B.AIR);
+    // pilotis, plancher, garde-corps et toit à quatre pans
+    for (const [x, z] of [[X0, Z0], [X1, Z0], [X0, Z1], [X1, Z1]]) for (let y = T + 1; y <= P + 3; y++) w.set(x, y, z, B.LOG);
+    w.fill(X0, P, Z0, X1, P, Z1, B.PLANKS);
+    for (let x = X0; x <= X1; x++) for (const z of [Z0, Z1]) if (x !== X0 && x !== X1) w.set(x, P + 1, z, B.PLANKS);
+    for (let z = Z0 + 1; z < Z1; z++) for (const x of [X0, X1]) w.set(x, P + 1, z, B.PLANKS);
+    w.set(X1, P + 1, 62, B.AIR); // entrée depuis l'escalier
+    w.fill(X0 - 1, P + 4, Z0 - 1, X1 + 1, P + 4, Z1 + 1, B.PLANKS);
+    w.fill(X0, P + 5, Z0, X1, P + 5, Z1, B.PLANKS);
+    w.fill(X0 + 1, P + 6, Z0 + 1, X1 - 1, P + 6, Z1 - 1, B.PLANKS);
+    w.set(64, P + 4, 62, B.GLOW);
+    snowCap(w, X0 - 1, Z0 - 1, X1 + 1, Z1 + 1);
+    // croix de Saint-André entre les pilotis (détails)
+    for (const [ax, az, bx, bz] of [[X0, Z0, X1, Z0], [X0, Z1, X1, Z1], [X0, Z0, X0, Z1], [X1, Z0, X1, Z1]]) {
+      for (let i = 1; i < 8; i++) {
+        const k = i / 8, y = T + 1 + (P - T - 1) * k;
+        for (const kk of [k, 1 - k]) { const x = ax + (bx - ax) * kk + 0.5, z = az + (bz - az) * kk + 0.5; w.details.push({ box: true, x0: x - 0.12, y0: y, z0: z - 0.12, x1: x + 0.12, y1: y + 0.24, z1: z + 0.12, tile: 'log_side' }); }
       }
     }
+    // escalier qui tourne autour du mirador : face sud vers l'est, palier d'angle, face est vers le nord, palier d'arrivée
+    const steps = [[62, 65, 1, 0], [63, 65, 2, 0], [64, 65, 3, 0], [65, 65, 4, 0], [66, 65, 5, 0], [67, 65, 5, -1], [67, 64, 6, 3], [67, 63, 7, 3], [67, 62, 8, -1]];
+    steps.forEach(([x, z, dy, dir], i) => {
+      const y = T + dy;
+      if (dir < 0) { w.set(x, y, z, B.PLANKS); for (let yy = T + 1; yy < y; yy++) w.set(x, yy, z, B.LOG); }
+      else { w.setStair(x, y, z, B.STAIR_WOOD, dir); if (i % 2 === 1) for (let yy = T + 1; yy < y; yy++) w.set(x, yy, z, B.LOG); }
+      for (let yy = y + 1; yy <= y + 3; yy++) if (yy < P + 4) w.set(x, yy, z, B.AIR);
+    });
+    // rampe côté vide (détails)
+    for (const [x, z, dy] of [[62, 65, 1], [63, 65, 2], [64, 65, 3], [65, 65, 4], [66, 65, 5], [67, 65, 5]]) w.details.push({ box: true, x0: x, y0: T + dy + 1.85, z0: z + 0.88, x1: x + 1, y1: T + dy + 1.95, z1: z + 0.96, tile: 'log_side' });
+    for (const [x, z, dy] of [[67, 65, 5], [67, 64, 6], [67, 63, 7], [67, 62, 8]]) w.details.push({ box: true, x0: x + 0.88, y0: T + dy + 1.85, z0: z, x1: x + 0.96, y1: T + dy + 1.95, z1: z + 1, tile: 'log_side' });
+    // cave sous la colline (8 blocs sous le sommet) et trappe entre les pilotis
+    const C = T - 8;
+    w.fill(59, C + 1, 52, 66, C + 4, 59, B.AIR);
+    w.fill(59, C, 52, 66, C, 59, B.PLANKS);
+    for (const [x, z] of [[59, 52], [66, 52], [59, 59], [66, 59]]) for (let y = C + 1; y <= C + 4; y++) w.set(x, y, z, B.LOG);
+    for (let x = 59; x <= 66; x++) { w.set(x, C + 5, 52, B.DARK_LOG); w.set(x, C + 5, 59, B.DARK_LOG); }
+    w.set(61, C + 5, 55, B.GLOW); w.set(65, C + 5, 55, B.GLOW);
+    w.set(60, C + 1, 58, B.CRATE); w.set(61, C + 1, 58, B.BARREL); w.set(60, C + 2, 58, B.CRATE); w.set(65, C + 1, 53, B.BARREL); w.set(65, C + 1, 54, B.CRATE);
+    stairs(w, 63, 56, C, 8, 0, 1, B.PLANKS, 2);
+    // garde-corps autour de la trémie
+    for (let z = 60; z <= 62; z++) for (const x of [62.9, 65.02]) w.details.push({ box: true, x0: x, y0: T + 1, z0: z, x1: x + 0.08, y1: T + 1.9, z1: z + 1, tile: 'log_side' });
+    // galerie de mine vers le nord : descend sous la colline puis sort au pied, toujours recouverte
+    // (a = coordonnée le long de la galerie (z, décroissante), c0..c1 = largeur (x))
+    const c0 = 60, c1 = 61, at = (a, c) => [c, a];
+    const topAt = (a, c) => { const [x, z] = at(a, c); return w.top(x, z); };
+    const put = (a, y, c, b) => { const [x, z] = at(a, c); w.set(x, y, z, b); };
+    const solidAt = (a, y, c) => { const [x, z] = at(a, c); return w.isSolid(x, y, z); };
+    let foot = 51; while (foot > 4 && Math.max(topAt(foot, c0), topAt(foot, c1)) > 9) foot--;
+    const minF = Math.max(topAt(foot, c0), topAt(foot, c1));
+    let fy = C;
+    for (let a = 51; a > foot; a--) {
+      const nf = Math.max(minF, fy - 1), sloping = nf < fy; fy = nf;
+      // éperon de la colline qui recouvre toujours la galerie jusqu'à l'entrée
+      for (let c = c0 - 4; c <= c1 + 4; c++) {
+        const dc = c < c0 ? c0 - c : c > c1 ? c - c1 : 0, target = fy + 5 - Math.max(0, dc - 1), t = topAt(a, c);
+        if (t >= target) continue;
+        const [x, z] = at(a, c);
+        if (w.get(x, t, z) === B.SNOW) w.set(x, t, z, B.DIRT);
+        for (let y = t + 1; y <= target; y++) w.set(x, y, z, y === target ? B.SNOW : y > target - 2 ? B.DIRT : B.STONE);
+      }
+      for (let c = c0; c <= c1; c++) {
+        put(a, fy, c, B.GRAVEL);
+        for (let y = fy - 1; y >= fy - 2; y--) if (!solidAt(a, y, c)) put(a, y, c, B.STONE);
+        for (let y = fy + 1; y <= fy + 3; y++) put(a, y, c, B.AIR);
+        if (sloping) { const [x, z] = at(a, c); w.setStair(x, fy, z, B.STAIR_STONE, 2); }
+      }
+      for (let c = c0 - 1; c <= c1 + 1; c++) if (!solidAt(a, fy + 4, c)) put(a, fy + 4, c, B.STONE);
+      if (a % 3 === 0) { for (let y = fy + 1; y <= fy + 3; y++) { put(a, y, c0 - 1, B.LOG); put(a, y, c1 + 1, B.LOG); } for (let c = c0 - 1; c <= c1 + 1; c++) put(a, fy + 4, c, B.PLANKS); }
+      if (a % 6 === 0) put(a, fy + 3, c0 - 1, B.GLOW);
+      w.details.push({ box: true, x0: c0 + 0.15, y0: fy + 1, z0: a, x1: c0 + 0.25, y1: fy + 1.06, z1: a + 1, tile: 'metal' });
+      w.details.push({ box: true, x0: c1 + 0.75, y0: fy + 1, z0: a, x1: c1 + 0.85, y1: fy + 1.06, z1: a + 1, tile: 'metal' });
+    }
+    // entrée de la mine : affleurement rocheux au bout de l'éperon, cadre en rondins
+    const fa = foot + 1;
+    for (let c = c0 - 2; c <= c1 + 2; c++) for (let y = minF + 1; y <= minF + 4; y++) if (solidAt(fa, y, c) && (c < c0 || c > c1 || y === minF + 4)) put(fa, y, c, (y + c) % 3 ? B.STONE : B.COBBLE);
+    for (let y = minF + 1; y <= minF + 3; y++) { put(fa, y, c0 - 1, B.LOG); put(fa, y, c1 + 1, B.LOG); }
+    for (let c = c0 - 1; c <= c1 + 1; c++) put(fa, minF + 4, c, B.DARK_LOG);
+    put(fa, minF + 3, c0 - 1, B.GLOW);
+    for (let c = c0; c <= c1; c++) for (let y = minF + 1; y <= minF + 3; y++) put(foot, y, c, B.AIR);
+    // wagonnet abandonné près de la sortie
+    put(foot + 2, minF + 1, c1, B.BARREL);
+    return P;
   }
   function create(id) {
     const def = list.find((m) => m.id === id) || list[0];
@@ -1194,7 +1469,6 @@ G.Maps = (function () {
     def.build(w, G.mulberry32(def.id.length * 1337 + def.stars));
     if (w.lavaFlowFrom) { fillPits(w, 0, 0, 26, 30, ['s', 'e'], B.VOLCROCK, B.BASALT); lavaFlow(w, w.lavaFlowFrom); }
     if (w.desertPath) desertPath(w, G.mulberry32(9));
-    if (w.belvedere) belvedereMine(w, w.belvedere);
     // aucune eau ou lave ne doit « flotter » : on borde chaque liquide par un bloc solide
     for (let y = 1; y < w.H; y++) for (let z = 0; z < w.D; z++) for (let x = 0; x < w.W; x++) {
       const b = w.data[w.idx(x, y, z)];
@@ -1209,7 +1483,8 @@ G.Maps = (function () {
     }
     for (const s of def.stations) {
       let t = -1;
-      if (s.top) { for (let y = w.H - 2; y >= 1; y--) if (w.canStand(s.x, y, s.z)) { t = y - 1; break; } }
+      if (s.floorY) t = s.floorY - 1;
+      else if (s.top) { for (let y = w.H - 2; y >= 1; y--) if (w.canStand(s.x, y, s.z)) { t = y - 1; break; } }
       else for (let y = 1; y < w.H - 2; y++) if (w.canStand(s.x, y, s.z)) { t = y - 1; break; }
       if (t < 0) t = w.top(s.x, s.z);
       for (let y = t + 1; y < t + 4; y++) w.set(s.x, y, s.z, B.AIR);

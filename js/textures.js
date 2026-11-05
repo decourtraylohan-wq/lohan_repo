@@ -220,6 +220,28 @@ G.Tex = (function () {
     tile('graffiti2', graffiti([0xffd020, 0x40e060, 0x101010]));
     tile('rubble', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, G.pick([0x7a7a74, 0x6a6662, 0x8c4a3a, 0x9a9890, 0x5a5652]), Math.floor((t.rnd() - 0.5) * 14)); });
     tile('cabinet', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const e = x === 0 || x === 15 || y % 5 === 0; t.px(x, y, e ? 0x4a4a4e : 0x7a7a80, Math.floor((t.rnd() - 0.5) * 8)); } for (let y = 2; y < 16; y += 5) { t.px(7, y, 0xd0d0d0); t.px(8, y, 0xd0d0d0); } });
+    // pierre de taille haussmannienne : assises horizontales, joints fins
+    tile('limestone', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const joint = y % 8 === 7 || (x + (y < 8 ? 0 : 8)) % 16 === 15; t.px(x, y, joint ? 0xb8ad94 : 0xd9cfb6, joint ? 0 : Math.floor((t.rnd() - 0.5) * 10) + (y % 8 === 0 ? 6 : 0)); } });
+    // zinc des toits parisiens : tasseaux verticaux
+    tile('zinc', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const seam = x % 5 === 0; t.px(x, y, seam ? 0x4a525c : 0x6e7883, seam ? 0 : Math.floor((t.rnd() - 0.5) * 8) + (y < 2 ? 8 : 0)); } });
+    // brownstone new-yorkais
+    tile('brownstone', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const joint = y % 8 === 7 || (x + (y < 8 ? 4 : 12)) % 16 === 15; t.px(x, y, joint ? 0x4e3228 : 0x7a4c3a, joint ? 0 : Math.floor((t.rnd() - 0.5) * 16)); } });
+    // ferronnerie des balcons (fond transparent)
+    tile('ironwork', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const bar = y < 2 || y > 14 || x % 4 === 0 || (y > 5 && y < 10 && Math.abs(((x % 4) - 2)) === Math.abs(y - 7.5) - 0.5); if (bar) t.px(x, y, 0x1c1e22, Math.floor((t.rnd() - 0.5) * 6)); else t.clear(x, y); } });
+    // bronze doré des statues
+    tile('bronze', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, t.rnd() < 0.2 ? 0x8a6a2a : 0xc49a3a, Math.floor((t.rnd() - 0.5) * 30)); });
+    // tags de graffiti (fond transparent, posés sur les murs des ruelles)
+    const tag = (cols, seed) => (t) => {
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.clear(x, y);
+      for (let k = 0; k < 4; k++) {
+        let x = 1 + Math.floor(t.rnd() * 4), y = 4 + Math.floor(t.rnd() * 8); const c = cols[k % cols.length];
+        for (let i = 0; i < 18 + seed; i++) { t.px(G.clamp(x, 0, 15), G.clamp(y, 0, 15), c); t.px(G.clamp(x, 0, 15), G.clamp(y + 1, 0, 15), c); x += t.rnd() < 0.75 ? 1 : 0; y += Math.round((t.rnd() - 0.5) * 3.2); y = G.clamp(y, 2, 13); if (x > 14) break; }
+      }
+      for (let i = 0; i < 5; i++) t.px(Math.floor(t.rnd() * 16), 14 + Math.floor(t.rnd() * 2), cols[0]);
+    };
+    tile('tag1', tag([0x30c0ff, 0xff40a0, 0xf0f0f0], 0));
+    tile('tag2', tag([0xffd020, 0x40e060, 0x101010], 2));
+    tile('tag3', tag([0xff5020, 0xffffff, 0x8040ff], 4));
 
     atlasTexture = new THREE.CanvasTexture(atlasCanvas);
     atlasTexture.magFilter = THREE.NearestFilter;

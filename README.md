@@ -21,9 +21,9 @@ puis va sur http://localhost:8000.
 - **5 cartes** :
   - Village Sylvestre : lac, rivière avec un pont, champs de blé, grange, colline boisée.
   - Ruines du Désert : ziggourat, canyon de mesas, oasis, tombeau souterrain.
-  - Avant-poste Gelé : fort avec chemin de ronde, montagne avec belvédère, lac gelé, chalets.
+  - Avant-poste Gelé : fort avec chemin de ronde, colline au sommet plat avec mirador, lac gelé, chalets aux toits enneigés.
   - Forteresse Infernale : lac et rivières de lave, donjon, tour de guet et passerelle surélevée.
-  - Ville Fantôme (128×128) : ville dévastée avec immeubles visitables étage par étage (accueil, bureaux, casiers), quartier serré de ruelles avec graffitis et escaliers de secours, routes défoncées, cratère de bombe qui donne sur les égouts, lampadaires, poubelles, accès aux égouts depuis les trottoirs.
+  - Ville Fantôme (128×128) : ville dévastée avec immeubles visitables étage par étage (accueil, bureaux, casiers). La moitié sud-est est un vieux quartier : immeubles haussmanniens (pierre de taille, balcons en fer forgé, stores de café, combles en zinc avec lucarnes et cheminées) et immeubles new-yorkais (brownstone, brique, corniches, châteaux d'eau, escaliers de secours), ruelles de 3 blocs avec graffitis, place pavée avec fontaine et statue équestre dorée. Routes défoncées, cratère de bombe qui donne sur les égouts, réverbères, poubelles, accès aux égouts depuis les trottoirs.
 - **8 armes détaillées** : culasse, pompe et chargeur animés, éjection des douilles, visée par les organes de visée. Elles s'achètent sur des socles ou dans la caisse mystère, et la Forge ★ les améliore (camouflage violet).
 - **6 atouts** qui s'activent au fil des vagues, et **6 bonus** lâchés par les ennemis.
 - **Zombies** : zombie, Coureur, Rampant, Brute, Traqueur (quadrupède qui bondit), Gonflé, Hurleuse (son cri ralentit le joueur et enrage les autres zombies), Cracheur, Blindé. Boss : Colosse, Nécromancien, Bélier.
@@ -45,12 +45,12 @@ puis va sur http://localhost:8000.
 - **Mode triche**, à cocher avant de lancer : vague de départ, points, armes, atouts, invincibilité, munitions infinies et spectateur. En jeu, K passe la vague, L donne +10 000 points et T active le spectateur (vol libre sans ennemis). Ces parties ne sont pas enregistrées.
 - **Voitures conduisibles** (Ville) : E pour monter ou descendre, ZQSD pour conduire. Elles écrasent les ennemis, encaissent les tirs, puis prennent feu et explosent.
 - **Verre cassable** : tirer à travers une vitre la brise.
-- **Désert** : une pyramide au sommet du canyon abrite un portail qui mène au tombeau souterrain (et inversement). Un chemin de pierre sinueux redescend du plateau de la pyramide vers l'ouest, et les crevasses ont été comblées pour qu'on ne reste plus bloqué.
+- **Désert** : une pyramide au sommet du canyon abrite un portail qui mène au tombeau souterrain (et inversement). Son socle est une mesa au contour irrégulier ; un sentier de pierre serpente sur un éperon rocheux jusqu'au sable, et un autre redescend vers l'ouest. Une gorge naturelle, avec une arche de roche, traverse la montagne depuis la crevasse derrière la pyramide jusqu'au coin nord-ouest.
 - **Zone de combat** qui s'agrandit à chaque vague : elle couvre toute la carte à la vague 5 en Zombies et à la vague 3 en Soldats. Il y a 30 secondes de préparation entre les vagues (N pour lancer plus tôt).
 - **Eau** : on nage (Espace pour remonter ou se hisser sur un bord) et la vue devient bleue sous l'eau. Les ennemis nagent aussi, et les soldats ne peuvent pas tirer dans l'eau.
 - **Dégâts de chute** à partir d'environ 4 blocs (pas dans l'eau).
-- **Toundra** : escalier jusqu'au belvédère, salle en dessous et mine qui ressort au pied de la montagne.
-- **Escaliers** en vraies marches partout, avec un palier en haut et une marche tournée quand ils débouchent sur le côté, avec assez de hauteur pour monter. La Ville a des escaliers de secours métalliques à la new-yorkaise.
+- **Toundra** : mirador sur pilotis au sommet de la colline, escalier qui tourne autour jusqu'à la plateforme (armoire du sniper), trappe vers une cave creusée dans la colline et mine cachée qui ressort au pied de la colline par une entrée boisée.
+- **Escaliers** en vraies marches partout, avec un palier en haut et une marche tournée quand ils débouchent sur le côté, avec assez de hauteur pour monter. La Ville a des escaliers de secours métalliques à la new-yorkaise (passerelle à chaque étage et volées alternées).
 - **Mode Classé** : 7 rangs, de Bronze à Légende. La difficulté augmente avec le rang.
 - **Statistiques** : carrière, record par carte et par type de partie, historique et détail vague par vague. Tout est sauvegardé dans le navigateur.
 
