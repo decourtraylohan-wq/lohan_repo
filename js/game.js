@@ -10,10 +10,10 @@ G.POWERUPS = {
 };
 
 G.CRAFT = [
-  { id: 'barricade', name: 'Barricade (sacs de sable)', desc: 'Mur bas 3×1 : abri accroupi, 900 PV', price: 600, max: 4 },
-  { id: 'shield', name: 'Bouclier énergétique', desc: 'Bloque les balles et les zombies, vos tirs passent. 45 s', price: 900, max: 3 },
+  { id: 'barricade', name: 'Barricade (sacs de sable)', desc: 'Mur bas 3×1 : abri accroupi, 450 PV (cassable)', price: 600, max: 4 },
+  { id: 'shield', name: 'Bouclier énergétique', desc: 'Bloque balles et zombies, vos tirs passent. 1500 PV, 60 s', price: 900, max: 3 },
   { id: 'plate', name: "Plaque d'armure", desc: '+50 armure (touche X)', price: 400, max: 5 },
-  { id: 'grenade', name: 'Grenade', desc: 'Explosif (touche G)', price: 250, max: 4 },
+  { id: 'grenade', name: 'Grenade', desc: 'Explosif (touche A ou G)', price: 250, max: 4 },
 ];
 
 G.Game = class {
@@ -81,7 +81,7 @@ G.Game = class {
     if (this.usePost) {
       r.setRenderTarget(this.post.rt); r.clear();
       r.render(this.scene, this.camera);
-      if (playing) { r.clearDepth(); r.render(this.player.vmScene, this.player.vmCam); }
+      if (playing && !this.player.vehicle && !this.player.spectator) { r.clearDepth(); r.render(this.player.vmScene, this.player.vmCam); }
       r.setRenderTarget(null); r.clear();
       this.post.mat.uniforms.uTime.value = (this.post.mat.uniforms.uTime.value + 0.016) % 100;
       this.post.mat.uniforms.uWarp.value = Math.max(0, (this.warpT || 0));
@@ -89,7 +89,7 @@ G.Game = class {
     } else {
       r.setRenderTarget(null); r.clear();
       r.render(this.scene, this.camera);
-      if (playing) { r.clearDepth(); r.render(this.player.vmScene, this.player.vmCam); }
+      if (playing && !this.player.vehicle && !this.player.spectator) { r.clearDepth(); r.render(this.player.vmScene, this.player.vmCam); }
     }
   }
   applyQuality() {
@@ -145,6 +145,7 @@ G.Game = class {
     this.buildMinimap();
     this.enemies = []; this.projectiles = []; this.powerups = []; this.fx = []; this.particlesList = [];
     this.builds = []; this.ghost = null; this.buildItem = null;
+    this.vehicles = (map.carSpots || []).slice(0, 28).map((sp) => new G.Vehicle(this, sp));
     this.tracers = [];
     scene.add(this.camera);
   }
@@ -169,6 +170,8 @@ G.Game = class {
   }
   disposeScene() {
     for (const e of this.enemies || []) e.remove();
+    for (const v of this.vehicles || []) v.remove();
+    if (this.player) { this.player.vehicle = null; this.player.spectator = false; }
     this.world.dispose(this.scene);
     this.scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose()); else o.material.dispose(); } });
     this.scene = null;
@@ -316,18 +319,35 @@ G.Game = class {
       if (e.code === 'Escape' || e.code === 'KeyP') { if (!document.pointerLockElement || e.code === 'KeyP') this.setPaused(!this.paused); return; }
       if (this.paused) return;
       pl.keys[e.code] = true;
-      if (e.code === 'KeyR') pl.tryReload();
+      if (e.repeat) { if (['Space', 'Tab'].includes(e.code)) e.preventDefault(); return; }
+      // les lettres d'action suivent la disposition du clavier (AZERTY : E, A, F…)
+      const key = (e.key || '').toLowerCase();
+      if (pl.vehicle) { if (key === 'e') this.exitVehicle(); if (e.code === 'Space') e.preventDefault(); return; }
+      if (key === 'r') pl.tryReload();
       if (e.code === 'Digit1' && !this.craftOpen) pl.switchTo(0);
       if (e.code === 'Digit2' && !this.craftOpen) pl.switchTo(1);
       if (e.code === 'Digit3' && !this.craftOpen) pl.switchTo(2);
-      if (e.code === 'KeyE' || e.code === 'KeyF') this.interact();
-      if (e.code === 'KeyV') pl.melee();
-      if (e.code === 'KeyX') pl.usePlate();
-      if (e.code === 'KeyB') this.cycleBuild();
+      if (key === 'e') {
+        // E : interagir si une station ou un véhicule est à portée, sinon coup de couteau
+        if (this.nearestStation()) this.interact();
+        else if (this.nearestVehicle()) this.enterVehicle(this.nearestVehicle());
+        else pl.melee();
+      }
+      if (key === 'v') pl.melee();
+      if (key === 'x') pl.usePlate();
+      if (key === 'f') this.cycleBuild();
+      if ((key === 'a' && e.code !== 'KeyA') || key === 'g') pl.throwGrenade();
+      if (e.code === 'KeyC') {
+        // double appui sur C : rester accroupi
+        const now = performance.now();
+        if (pl.crouchLock) pl.crouchLock = false;
+        else if (now - (this.lastC || 0) < 320) pl.crouchLock = true;
+        this.lastC = now;
+      }
       if (this.craftOpen && /^Digit[1-4]$/.test(e.code)) { this.craft(Number(e.code.slice(5)) - 1); return; }
-      if (this.cheats && e.code === 'KeyK') this.cheatSkip();
-      if (this.cheats && e.code === 'KeyL') { this.points += 10000; }
-      if (e.code === 'KeyG') pl.throwGrenade();
+      if (this.cheats && key === 'k') this.cheatSkip();
+      if (this.cheats && key === 'l') { this.points += 10000; }
+      if (this.cheats && this.cheats.spectator && key === 't') this.toggleSpectator();
       if (e.code === 'KeyN' && this.phase === 'intermission' && this.wave > 0) this.phaseT = Math.min(this.phaseT, 0.5);
       if (e.code === 'Tab') { e.preventDefault(); G.UI.showScoreboard(true); }
       if (['Space', 'Tab'].includes(e.code)) e.preventDefault();
@@ -434,6 +454,10 @@ G.Game = class {
     this.updateAmbient(dt);
     this.updateBuilds(dt);
     this.updatePortals(dt);
+    for (const v of this.vehicles) v.update(dt, v === pl.vehicle ? v.input : null);
+    if (pl.vehicle) pl.vehicleCamera(this.camera, dt);
+    if (pl.spectator) { for (const e of this.enemies) if (!e.dead) { e.dead = true; e.deadT = 3; } }
+    this.world.updateDirty();
     if (this.craftOpen && (!this.craftStation || Math.hypot(pl.pos.x - this.craftStation.center.x, pl.pos.z - this.craftStation.center.z) > 3)) this.closeCraft();
     if (this.cheats && this.cheats.god) { pl.hp = pl.maxHp; }
     if (this.cheats && this.cheats.ammo) { const sl = pl.slot; sl.reserve = Math.max(sl.reserve, 99); }
@@ -473,7 +497,8 @@ G.Game = class {
     const e = this.mods.early;
     const hints = [];
     if (this.gameType === 'soldats') {
-      if (w + e === 2) hints.push('Des Assaillants arrivent au contact');
+      if (w + e === 2) hints.push('Assaillants et Égorgeurs au couteau arrivent au contact');
+      if (w + e === 5) hints.push('Des tireurs embusqués restent à distance');
       if (w + e === 3) hints.push('Brécheurs à fusil à pompe !');
       if (w + e === 4) hints.push('Grenadiers : attention aux grenades');
       if (w + e === 6) hints.push("Tireurs d'élite : repérez le laser rouge !");
@@ -508,7 +533,9 @@ G.Game = class {
     let acc = 0;
     const opts = [];
     if (this.gameType === 'soldats') {
-      if (ww >= 2) opts.push(['assault', Math.min(0.3, 0.12 + ww * 0.02)]);
+      if (ww >= 2) opts.push(['assault', Math.min(0.25, 0.1 + ww * 0.02)]);
+      if (ww >= 2) opts.push(['knifer', Math.min(0.14, 0.05 + ww * 0.012)]);
+      if (ww >= 5) opts.push(['marksman', Math.min(0.12, (ww - 4) * 0.025)]);
       if (ww >= 3) opts.push(['breacher', Math.min(0.15, (ww - 2) * 0.03)]);
       if (ww >= 4) opts.push(['grenadier', Math.min(0.12, (ww - 3) * 0.025)]);
       if (ww >= 6) opts.push(['sniper', Math.min(0.12, (ww - 5) * 0.025)]);
@@ -549,6 +576,7 @@ G.Game = class {
     return e;
   }
   updateWaves(dt) {
+    if (this.player.spectator) return;
     if (this.phase === 'intermission') {
       this.phaseT -= dt;
       if (this.phaseT <= 0) this.beginWave();
@@ -617,9 +645,10 @@ G.Game = class {
         dir.x += (Math.random() - 0.5) * 2 * spread; dir.y += (Math.random() - 0.5) * 2 * spread; dir.z += (Math.random() - 0.5) * 2 * spread;
         dir.normalize();
       }
-      const wh = this.world.raycast(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, st.range);
+      let glassN = 0;
+      const wh = this.world.raycast(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, st.range, (x, y, z, b) => { if (b === G.B.GLASS && glassN++ < 3) this.breakGlass(x, y, z); });
       let maxD = wh ? wh.dist : st.range;
-      if (this.world.solids.length) { const sb = this.world.solidOnRay(eye, dir, maxD, (o) => o.opaque); if (sb) maxD = sb.t; }
+      if (this.world.solids.length) { const sb = this.world.solidOnRay(eye, dir, maxD, (o) => o.opaque); if (sb) { maxD = sb.t; if (sb.s.car) sb.s.car.damage(st.dmg * 0.35); } }
       const hits = [];
       for (const e of this.enemies) {
         if (e.dead) continue;
@@ -718,6 +747,7 @@ G.Game = class {
     const pl = this.player;
     if (pl.dead || this.phase === 'over') return;
     if (this.cheats && this.cheats.god) return;
+    if (pl.vehicle && !pl.vehicle.dead && src !== 'car') { pl.vehicle.damage(amount * 1.2); return; }
     if (pl.armor > 0) {
       const absorbed = Math.min(pl.armor, amount * 0.75);
       pl.armor -= absorbed; amount -= absorbed;
@@ -784,6 +814,8 @@ G.Game = class {
       const d = c.distanceTo(pos);
       if (d < r + e.w * 0.5) this.damageEnemy(e, dmg * (1 - Math.min(1, d / r) * 0.6), 'body', src === 'player' ? 'explosive' : src);
     }
+    for (const v of this.vehicles || []) if (!v.dead && v.pos.distanceTo(pos) < r + 2 && src !== 'car-self') v.damage(dmg * 0.6 * (1 - Math.min(1, v.pos.distanceTo(pos) / (r + 2))) + 20);
+    for (const b of this.builds || []) { const c = b.min.clone().add(b.max).multiplyScalar(0.5); if (!b.dead && c.distanceTo(pos) < r + 1) this.damageBuild(b, dmg * 0.5); }
     const pc = this.player.pos.clone(); pc.y += 0.9;
     const pd = pc.distanceTo(pos);
     if (pd < r) {
@@ -903,7 +935,7 @@ G.Game = class {
           if (p.type === 'orb') { const to = pl.eye.clone().sub(p.pos).normalize().multiplyScalar(9); p.vel.lerp(to, Math.min(1, sdt * 0.9)); }
           const np = p.pos.clone().addScaledVector(p.vel, sdt);
           let solid = w.isSolid(Math.floor(np.x), Math.floor(np.y), Math.floor(np.z));
-          if (!solid && p.owner !== 'player') for (const b of this.builds) if (!b.dead && np.x > b.min.x && np.x < b.max.x && np.y > b.min.y && np.y < b.max.y && np.z > b.min.z && np.z < b.max.z) { solid = true; if (p.type !== 'egrenade') this.damageBuild(b, p.dmg); }
+          if (!solid && p.owner !== 'player') for (const b of this.world.solids) if (!b.dead && np.x > b.min.x && np.x < b.max.x && np.y > b.min.y && np.y < b.max.y && np.z > b.min.z && np.z < b.max.z) { solid = true; if (p.type !== 'egrenade') this.damageBuild(b, p.dmg); }
           if (p.type === 'grenade' || p.type === 'egrenade') {
             if (solid) {
               // rebond simple
@@ -963,6 +995,7 @@ G.Game = class {
     this.fx.push({ mesh: fl, t: 0, life: 0.05, kind: 'tracer' });
     const target = pl.eye.clone(); target.y -= 0.3;
     const dirP = target.clone().sub(from); const dl = dirP.length(); dirP.normalize();
+    let gN = 0; this.world.raycast(from.x, from.y, from.z, dirP.x, dirP.y, dirP.z, dl, (x, y, z, b) => { if (b === G.B.GLASS && gN++ < 2) this.breakGlass(x, y, z); });
     const blockHit = this.world.solids.length ? this.world.solidOnRay(from, dirP, dl) : null;
     if (blockHit) {
       const end = from.clone().addScaledVector(dirP, blockHit.t);
@@ -1197,7 +1230,7 @@ G.Game = class {
   cycleBuild() {
     const pl = this.player, order = ['barricade', 'shield'];
     const avail = order.filter((k) => pl.builds[k] > 0);
-    if (!avail.length) { this.buildItem = null; this.removeGhost(); G.UI.message('', 'Rien à construire : fabriquez à un établi ⚒', 1.5, '#e0a040'); return; }
+    if (!avail.length) { this.buildItem = null; this.removeGhost(); G.UI.message('', 'Rien à construire : fabriquez à un établi ⚒ (touche F pour construire)', 1.5, '#e0a040'); return; }
     const i = this.buildItem ? avail.indexOf(this.buildItem) : -1;
     this.buildItem = i + 1 < avail.length ? avail[i + 1] : null;
     if (!this.buildItem) this.removeGhost();
@@ -1249,15 +1282,17 @@ G.Game = class {
     }
     mesh.position.copy(c);
     this.scene.add(mesh);
-    const hp = item === 'barricade' ? 900 : 500;
-    const s = { type: item, min: b.min, max: b.max, hp, maxHp: hp, mesh, opaque: item === 'barricade', blocksPlayer: item === 'barricade', life: item === 'shield' ? 45 : Infinity, t: 0 };
+    const hp = item === 'barricade' ? 450 : 1500;
+    const s = { type: item, min: b.min, max: b.max, hp, maxHp: hp, mesh, opaque: item === 'barricade', blocksPlayer: item === 'barricade', life: item === 'shield' ? 60 : Infinity, t: 0 };
     this.builds.push(s);
     this.world.solids.push(s);
+    this.world.navBlock(s.min, s.max, 1);
     G.Audio.S.build();
     this.particles(c, item === 'barricade' ? 0x958866 : 0x50b0ff, 10, 2.5);
     if (pl.builds[item] <= 0) { this.buildItem = null; this.removeGhost(); }
   }
   damageBuild(b, dmg) {
+    if (b.car) { if (!b.wreck) b.car.damage(dmg); return; }
     if (b.dead) return;
     b.hp -= dmg;
     G.Audio.S.buildHit(b.min);
@@ -1273,6 +1308,7 @@ G.Game = class {
     this.scene.remove(b.mesh);
     b.mesh.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
     const i = this.world.solids.indexOf(b); if (i >= 0) this.world.solids.splice(i, 1);
+    this.world.navBlock(b.min, b.max, -1);
   }
   updateBuilds(dt) {
     for (const b of this.builds) {
@@ -1306,6 +1342,47 @@ G.Game = class {
       }
     }
   }
+  breakGlass(x, y, z) {
+    this.world.setBlock(x, y, z, G.B.AIR);
+    this.particles(new THREE.Vector3(x + 0.5, y + 0.5, z + 0.5), 0xbfd8e8, 8, 3, 0.08);
+    G.Audio.S.glass(new THREE.Vector3(x, y, z));
+  }
+  // ---------- Véhicules ----------
+  nearestVehicle() {
+    const p = this.player.pos; let best = null, bd = 3.2;
+    for (const v of this.vehicles || []) { if (v.dead) continue; const d = Math.hypot(v.pos.x - p.x, v.pos.z - p.z); if (d < bd && Math.abs(v.pos.y - p.y) < 2) { bd = d; best = v; } }
+    return best;
+  }
+  enterVehicle(v) {
+    const pl = this.player;
+    pl.vehicle = v; pl._camPos = null; pl.camOrbit = 0; pl.crouch = false; pl.h = 1.8; pl.slideT = 0; pl.mouse.left = false; pl.mouse.right = false;
+    this.buildItem = null; this.removeGhost();
+    G.Audio.S.click();
+    this.message('', '[ZQSD] conduire · [Espace] frein · [E] sortir', 2.5, '#e0e0e0');
+  }
+  exitVehicle(forced) {
+    const pl = this.player, v = pl.vehicle; if (!v) return;
+    pl.vehicle = null;
+    const w = this.world;
+    const cands = [v.right.multiplyScalar(-2.0), v.right.multiplyScalar(2.0), v.forward.multiplyScalar(3.2), v.forward.multiplyScalar(-3.2)];
+    let placed = false;
+    for (const c of cands) {
+      const p = v.pos.clone().add(c);
+      const y = w.standBelow(Math.floor(p.x), v.pos.y + 1.5, Math.floor(p.z));
+      if (y < 999 && !w.collides(p.x, y, p.z, 0.3, 1.8, 'player')) { pl.pos.set(p.x, y, p.z); placed = true; break; }
+    }
+    if (!placed) pl.pos.set(v.pos.x, v.pos.y + v.H + 0.1, v.pos.z);
+    pl.vel.set(0, 0, 0); pl.camY = pl.pos.y + pl.eyeH; pl.yaw = v.yaw + Math.PI; pl.pitch = 0;
+    pl.setViewWeapon();
+    if (forced) this.message('', 'Le véhicule explose !', 1.5, '#ff8040');
+  }
+  toggleSpectator() {
+    const pl = this.player;
+    pl.spectator = !pl.spectator;
+    if (pl.vehicle) this.exitVehicle();
+    if (pl.spectator) { for (const e of this.enemies) if (!e.dead) { e.hp = 0; e.dead = true; e.deadT = 3; } this.toSpawn = 0; if (this.curWave) this.curWave.bossPending = false; this.boss = null; this.message('SPECTATEUR', 'Vol libre — Espace monter, C descendre, Maj rapide — [T] quitter', 3, '#ff60ff'); }
+    else { pl.vel.set(0, 0, 0); const y = this.world.standBelow(Math.floor(pl.pos.x), pl.pos.y + 1, Math.floor(pl.pos.z)); if (y < 999) pl.pos.y = y; else pl.pos.copy(this.map.playerSpawn); this.message('', 'Mode spectateur désactivé', 1.5, '#ff60ff'); if (this.phase === 'active') { this.toSpawn = 0; } }
+  }
   // ---------- Triche ----------
   cheatSkip() {
     for (const e of this.enemies) if (!e.dead) { e.hp = 0; e.die('nuke', 'body'); }
@@ -1322,7 +1399,7 @@ G.Game = class {
       points: this.points, wave: this.wave, hp: pl.hp, maxHp: pl.maxHp,
       weapon: st.name, mag: this.power.fury > 0 ? '∞' : s.mag, reserve: s.reserve, reloading: pl.reloadT > 0,
       grenades: pl.grenades, armor: pl.armor, maxArmor: pl.maxArmor, plates: pl.plates, plateT: pl.plateT, builds: pl.builds, buildItem: this.buildItem, crouch: pl.crouch, cheats: !!this.cheats, perks: [...pl.perks], power: this.power,
-      prompt: near ? this.stationPrompt(near) : (this.phase === 'intermission' && this.wave > 0 ? 'Vague suivante dans ' + Math.ceil(this.phaseT) + ' s — [N] pour lancer' : ''),
+      prompt: pl.vehicle ? 'Véhicule ' + Math.max(0, Math.round(pl.vehicle.hp / pl.vehicle.maxHp * 100)) + ' % — [ZQSD] conduire · [Espace] frein · [E] sortir' : pl.spectator ? 'SPECTATEUR — [T] quitter' : near ? this.stationPrompt(near) : this.nearestVehicle() ? '[E] Conduire le véhicule' : (this.phase === 'intermission' && this.wave > 0 ? 'Vague suivante dans ' + Math.ceil(this.phaseT) + ' s — [N] pour lancer' : ''),
       boss: this.boss && !this.boss.dead ? { name: this.boss.T.name, hp: this.boss.hp / this.boss.maxHp, stunned: this.boss.state === 'stunned' } : null,
       left: this.phase === 'active' ? this.toSpawn + this.aliveCount() : 0,
       ads: pl.ads, sprint: pl.sprinting, stamina: pl.stamina, slots: pl.slots.map((x, i) => ({ name: G.weaponStats(x).name, cur: i === pl.cur })),

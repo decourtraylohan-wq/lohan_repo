@@ -6,7 +6,7 @@ G.B = {
   FLOWER_R: 30, FLOWER_Y: 31, TALLGRASS: 32, WHEAT: 33, DEADBUSH: 34, FARMLAND: 35, PATH: 36,
   ASPHALT: 37, ASPHALT_LINE: 38, SIDEWALK: 39, CONCRETE: 40, CONCRETE_DARK: 41, GLASS: 42, SEWER: 43, ROOF: 44, GRATE: 45,
   CAR_RED: 46, CAR_BLUE: 47, CAR_WHITE: 48, AWNING: 49, WHITEWALL: 50, TIRE: 51, BOOKSHELF: 52, SNOWGRASS: 53, CLAY: 54,
-  BIRCH: 55, BIRCH_LEAVES: 56, DARK_LOG: 57, DARK_LEAVES: 58, AUTUMN_LEAVES: 59, SANDBAG: 60, CHISELED: 61, PORTAL: 62, BUSH: 63, MUD: 64, ROCK: 65,
+  BIRCH: 55, BIRCH_LEAVES: 56, DARK_LOG: 57, DARK_LEAVES: 58, AUTUMN_LEAVES: 59, SANDBAG: 60, CHISELED: 61, PORTAL: 62, BUSH: 63, MUD: 64, ROCK: 65, SCORIA: 66, SCORIA_DARK: 67, PODZOL: 68, BARBED: 69, WALLPANEL: 70,
 };
 
 G.BLOCKS = (function () {
@@ -79,6 +79,11 @@ G.BLOCKS = (function () {
   def(B.BUSH, 'bush', null, null, { opaque: false, bulletPass: true });
   def(B.MUD, 'mud');
   def(B.ROCK, 'rock');
+  def(B.SCORIA, 'scoria');
+  def(B.SCORIA_DARK, 'scoria_dark');
+  def(B.PODZOL, 'podzol', 'podzol_side', 'dirt');
+  def(B.BARBED, 'barbed', null, null, { solid: true, opaque: false, bulletPass: true, plant: true });
+  def(B.WALLPANEL, 'wallpanel');
   return d;
 })();
 
@@ -117,6 +122,54 @@ G.World = class {
 
   // ---------- Maillage ----------
   buildMesh(scene, shadows) {
+    this.scene = scene; this.shadows = shadows; this.CH = 16;
+    this.mats = {
+      opaque: new THREE.MeshLambertMaterial({ map: G.Tex.atlas, vertexColors: true, alphaTest: 0.5 }),
+      bright: new THREE.MeshBasicMaterial({ map: G.Tex.atlas, vertexColors: true }),
+    };
+    const waveShader = (mat) => {
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uTime = { value: 0 };
+        sh.vertexShader = 'attribute float wave;\nuniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+          'vec3 transformed = vec3(position);\ntransformed.y += wave * (sin(position.x * 1.7 + uTime * 1.5) * 0.045 + cos(position.z * 1.3 + uTime * 1.1) * 0.045 - 0.04);');
+        mat.userData.shader = sh;
+      };
+      this.liquidMats.push(mat);
+      return mat;
+    };
+    this.waterTex = G.Tex.liquidTex('water');
+    this.lavaTex = G.Tex.liquidTex('lava');
+    this.mats.water = waveShader(new THREE.MeshPhongMaterial({ map: this.waterTex, transparent: true, opacity: 0.8, shininess: 90, specular: 0x6a7a88, depthWrite: false }));
+    this.mats.lava = waveShader(new THREE.MeshBasicMaterial({ map: this.lavaTex }));
+    this.uvCache = {};
+    this.chunks = new Map(); this.dirty = new Set();
+    this.detailBuckets = new Map();
+    for (const d of this.details) { const k = Math.floor(d.x / this.CH) + ',' + Math.floor(d.z / this.CH); if (!this.detailBuckets.has(k)) this.detailBuckets.set(k, []); this.detailBuckets.get(k).push(d); }
+    for (let cz = 0; cz * this.CH < this.D; cz++) for (let cx = 0; cx * this.CH < this.W; cx++) this.buildChunk(cx, cz);
+  }
+  // modifie un bloc après la génération (verre brisé…) et reconstruit les tronçons concernés
+  setBlock(x, y, z, b) {
+    if (!this.inside(x, y, z)) return;
+    this.data[this.idx(x, y, z)] = b;
+    const C = this.CH, cx = Math.floor(x / C), cz = Math.floor(z / C);
+    this.dirty.add(cx + ',' + cz);
+    if (x % C === 0) this.dirty.add((cx - 1) + ',' + cz); if (x % C === C - 1) this.dirty.add((cx + 1) + ',' + cz);
+    if (z % C === 0) this.dirty.add(cx + ',' + (cz - 1)); if (z % C === C - 1) this.dirty.add(cx + ',' + (cz + 1));
+  }
+  updateDirty() {
+    let n = 0;
+    for (const k of this.dirty) {
+      const [cx, cz] = k.split(',').map(Number);
+      if (cx >= 0 && cz >= 0 && cx * this.CH < this.W && cz * this.CH < this.D) this.buildChunk(cx, cz);
+      this.dirty.delete(k);
+      if (++n >= 3) break;
+    }
+  }
+  buildChunk(cx, cz) {
+    const key = cx + ',' + cz;
+    const old = this.chunks.get(key);
+    if (old) for (const m of old) { this.scene.remove(m); m.geometry.dispose(); const i = this.meshes.indexOf(m); if (i >= 0) this.meshes.splice(i, 1); }
+    const x0 = cx * this.CH, x1 = Math.min(this.W, x0 + this.CH), z0 = cz * this.CH, z1 = Math.min(this.D, z0 + this.CH);
     const FACES = [
       { n: [1, 0, 0], t: 'side', v: [[1, 0, 1], [1, 0, 0], [1, 1, 0], [1, 1, 1]] },
       { n: [-1, 0, 0], t: 'side', v: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] },
@@ -128,11 +181,11 @@ G.World = class {
     const AO = [0.4, 0.6, 0.8, 1.0];
     const groups = { opaque: this._newGroup(), bright: this._newGroup(), water: this._newGroup(), lava: this._newGroup() };
     const occ = (x, y, z) => { const b = this.get(x, y, z); return b !== 0 && G.BLOCKS[b].opaque ? 1 : 0; };
-    const uvCache = {};
+    const uvCache = this.uvCache;
     const getUV = (name) => uvCache[name] || (uvCache[name] = G.Tex.uv(name));
-    const rnd = G.mulberry32(5);
+    const rnd = G.mulberry32(5 + cx * 31 + cz * 977);
 
-    for (let y = 0; y < this.H; y++) for (let z = 0; z < this.D; z++) for (let x = 0; x < this.W; x++) {
+    for (let y = 0; y < this.H; y++) for (let z = z0; z < z1; z++) for (let x = x0; x < x1; x++) {
       const b = this.data[this.idx(x, y, z)];
       if (!b) continue;
       const def = G.BLOCKS[b];
@@ -186,10 +239,11 @@ G.World = class {
       }
     }
 
-    // détails décoratifs (boîtes sans collision)
-    for (const d of this.details) this._box(groups.opaque, d, getUV(d.tile));
+
+    for (const d of this.detailBuckets.get(key) || []) this._box(groups.opaque, d, getUV(d.tile));
+    const meshes = [];
     const mk = (g, mat, cast) => {
-      if (!g.idx.length) return;
+      if (!g.idx.length) return null;
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3));
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.nor, 3));
@@ -200,33 +254,16 @@ G.World = class {
       geo.computeBoundingSphere();
       const m = new THREE.Mesh(geo, mat);
       m.matrixAutoUpdate = false;
-      if (shadows) { m.castShadow = cast; m.receiveShadow = true; }
-      scene.add(m);
-      this.meshes.push(m);
+      if (this.shadows) { m.castShadow = cast; m.receiveShadow = true; }
+      this.scene.add(m);
+      this.meshes.push(m); meshes.push(m);
       return m;
     };
-    mk(groups.opaque, new THREE.MeshLambertMaterial({ map: G.Tex.atlas, vertexColors: true, alphaTest: 0.5, side: THREE.FrontSide }), true);
-    mk(groups.bright, new THREE.MeshBasicMaterial({ map: G.Tex.atlas, vertexColors: true }), false);
-    // liquides animés (vagues + texture qui défile)
-    const waveShader = (mat) => {
-      mat.onBeforeCompile = (sh) => {
-        sh.uniforms.uTime = { value: 0 };
-        sh.vertexShader = 'attribute float wave;\nuniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>',
-          'vec3 transformed = vec3(position);\ntransformed.y += wave * (sin(position.x * 1.7 + uTime * 1.5) * 0.045 + cos(position.z * 1.3 + uTime * 1.1) * 0.045 - 0.04);');
-        mat.userData.shader = sh;
-      };
-      this.liquidMats.push(mat);
-      return mat;
-    };
-    if (groups.water.idx.length) {
-      this.waterTex = G.Tex.liquidTex('water');
-      const wm = mk(groups.water, waveShader(new THREE.MeshPhongMaterial({ map: this.waterTex, transparent: true, opacity: 0.8, shininess: 90, specular: 0x6a7a88, depthWrite: false })), false);
-      wm.renderOrder = 2;
-    }
-    if (groups.lava.idx.length) {
-      this.lavaTex = G.Tex.liquidTex('lava');
-      mk(groups.lava, waveShader(new THREE.MeshBasicMaterial({ map: this.lavaTex })), false);
-    }
+    mk(groups.opaque, this.mats.opaque, true);
+    mk(groups.bright, this.mats.bright, false);
+    const wm = mk(groups.water, this.mats.water, false); if (wm) wm.renderOrder = 2;
+    mk(groups.lava, this.mats.lava, false);
+    this.chunks.set(key, meshes);
   }
   _plant(g, x, y, z, uvr, rnd) {
     const [u0, v0, u1, v1] = uvr;
@@ -271,12 +308,14 @@ G.World = class {
     }
   }
   dispose(scene) {
-    for (const m of this.meshes) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); }
+    for (const m of this.meshes) { scene.remove(m); m.geometry.dispose(); }
+    if (this.mats) for (const k in this.mats) this.mats[k].dispose();
+    if (this.waterTex) this.waterTex.dispose(); if (this.lavaTex) this.lavaTex.dispose();
     this.meshes = [];
   }
 
   // ---------- Lancer de rayon (DDA) ----------
-  raycast(ox, oy, oz, dx, dy, dz, maxDist) {
+  raycast(ox, oy, oz, dx, dy, dz, maxDist, onPass) {
     let x = Math.floor(ox), y = Math.floor(oy), z = Math.floor(oz);
     const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1, sz = dz > 0 ? 1 : -1;
     const tdx = dx !== 0 ? Math.abs(1 / dx) : Infinity, tdy = dy !== 0 ? Math.abs(1 / dy) : Infinity, tdz = dz !== 0 ? Math.abs(1 / dz) : Infinity;
@@ -287,6 +326,7 @@ G.World = class {
     while (t <= maxDist) {
       const b = this.get(x, y, z);
       if (b && !G.BLOCKS[b].bulletPass) return { dist: t, x, y, z, nx, ny, nz, block: b };
+      if (b && onPass) onPass(x, y, z, b, t);
       if (y < 0 || y >= this.H + 4) break;
       if (tmx < tmy && tmx < tmz) { x += sx; t = tmx; tmx += tdx; nx = -sx; ny = 0; nz = 0; }
       else if (tmy < tmz) { y += sy; t = tmy; tmy += tdy; nx = 0; ny = -sy; nz = 0; }
@@ -413,7 +453,7 @@ G.World = class {
     for (let i = 0; i < N; i++) inCount[i + 1] += inCount[i];
     const inList = new Int32Array(outList.length), fillPos = inCount.slice();
     for (let i = 0; i < N; i++) for (let k = outStart[i]; k < outStart[i + 1]; k++) inList[fillPos[outList[k]]++] = i;
-    this.nav = { N, nodeAt, nx: Int16Array.from(nx), ny: Int16Array.from(ny), nz: Int16Array.from(nz), outStart, outList: Int32Array.from(outList), inStart: inCount, inList, dist: new Int32Array(N).fill(-1), queue: new Int32Array(N) };
+    this.nav = { blocked: new Int16Array(N), N, nodeAt, nx: Int16Array.from(nx), ny: Int16Array.from(ny), nz: Int16Array.from(nz), outStart, outList: Int32Array.from(outList), inStart: inCount, inList, dist: new Int32Array(N).fill(-1), queue: new Int32Array(N) };
   }
   // nœud le plus proche d'une position (on cherche sous les pieds)
   nodeNear(x, y, z) {
@@ -442,10 +482,20 @@ G.World = class {
       const c = q[qh++], cd = n.dist[c] + 1;
       for (let k = n.inStart[c]; k < n.inStart[c + 1]; k++) {
         const a = n.inList[k];
-        if (n.dist[a] !== -1) continue;
+        if (n.dist[a] !== -1 || n.blocked[a] > 0) continue;
         n.dist[a] = cd; q[qt++] = a;
       }
     }
+  }
+  // marque / libère les cases de navigation occupées par un obstacle (voiture, barricade)
+  navBlock(min, max, delta) {
+    const n = this.nav; if (!n) return;
+    const ids = [];
+    for (let x = Math.floor(min.x + 0.1); x <= Math.floor(max.x - 0.1); x++) for (let z = Math.floor(min.z + 0.1); z <= Math.floor(max.z - 0.1); z++) {
+      if (x < 0 || z < 0 || x >= this.W || z >= this.D) continue;
+      for (let y = Math.max(1, Math.floor(min.y) - 1); y <= Math.floor(min.y) + 1; y++) { const id = n.nodeAt[this.idx(x, y, z)]; if (id >= 0) { n.blocked[id] = Math.max(0, n.blocked[id] + delta); ids.push(id); } }
+    }
+    return ids;
   }
   flowDistAt(x, y, z) { const id = this.nodeNear(x, y, z); return id < 0 ? -1 : this.nav.dist[id]; }
   nextStep(x, y, z) {
@@ -454,7 +504,7 @@ G.World = class {
     let best = -1, bd = n.dist[id] < 0 ? 1e9 : n.dist[id];
     for (let k = n.outStart[id]; k < n.outStart[id + 1]; k++) {
       const t = n.outList[k], d = n.dist[t];
-      if (d >= 0 && d < bd) { bd = d; best = t; }
+      if (d >= 0 && d < bd && !n.blocked[t]) { bd = d; best = t; }
     }
     if (best < 0) return null;
     return [n.nx[best], n.ny[best], n.nz[best]];

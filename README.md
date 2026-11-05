@@ -42,7 +42,9 @@ puis va sur http://localhost:8000.
 
   Chacune a une durabilité ; les zombies la frappent et les soldats tirent dessus.
 - **Soldats plus tactiques** : ils cherchent un abri d'où ils peuvent tirer, s'y accroupissent, se relèvent pour tirer, rechargent à couvert, courent d'abri en abri, se déplacent en escouades et lancent des grenades pour vous déloger.
-- **Mode triche**, à cocher avant de lancer : vague de départ, points, armes, atouts, invincibilité, munitions infinies. En jeu, K passe la vague et L donne +10 000 points. Ces parties ne sont pas enregistrées.
+- **Mode triche**, à cocher avant de lancer : vague de départ, points, armes, atouts, invincibilité, munitions infinies et spectateur. En jeu, K passe la vague, L donne +10 000 points et T active le spectateur (vol libre sans ennemis). Ces parties ne sont pas enregistrées.
+- **Voitures conduisibles** (Ville) : E pour monter ou descendre, ZQSD pour conduire. Elles écrasent les ennemis, encaissent les tirs, puis prennent feu et explosent.
+- **Verre cassable** : tirer à travers une vitre la brise.
 - **Désert** : une pyramide au sommet du canyon abrite un portail qui mène au tombeau souterrain (et inversement).
 - **Mode Classé** : 7 rangs, de Bronze à Légende. La difficulté augmente avec le rang.
 - **Statistiques** : carrière, record par carte et par type de partie, historique et détail vague par vague. Tout est sauvegardé dans le navigateur.
@@ -53,16 +55,16 @@ puis va sur http://localhost:8000.
 |---|---|
 | ZQSD / WASD | Se déplacer |
 | Maj | Sprinter |
-| C | S'accroupir ; glissade en sprintant |
+| C | S'accroupir (double appui : rester accroupi) ; glissade en sprintant |
 | X | Plaque d'armure |
-| B | Mode construction |
+| F | Mode construction |
 | Espace | Sauter |
 | Clic gauche / droit | Tirer / viser |
 | R | Recharger |
 | 1 2 3 / molette | Changer d'arme |
-| E | Acheter / interagir |
+| E | Acheter / interagir / voiture, sinon couteau |
 | V / clic molette | Couteau |
-| G | Grenade |
+| A / G | Grenade |
 | N | Lancer la vague suivante |
 | Tab | Stats de la partie |
 | Échap | Pause |

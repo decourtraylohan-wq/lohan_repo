@@ -25,6 +25,26 @@ G.Tex = (function () {
     return ({ px, rnd }) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) px(x, y, base, Math.floor((rnd() - 0.5) * amt)); };
   }
 
+  // pierres irrégulières (cellules de Voronoï répétables) : scories, basalte…
+  function voronoi(palette, gap, n, pores) {
+    return (t) => {
+      const pts = [];
+      for (let i = 0; i < n; i++) pts.push([t.rnd() * 16, t.rnd() * 16, palette[Math.floor(t.rnd() * palette.length)], Math.floor((t.rnd() - 0.5) * 24)]);
+      for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+        let d1 = 1e9, d2 = 1e9, c = null;
+        for (const p of pts) for (let ox = -16; ox <= 16; ox += 16) for (let oy = -16; oy <= 16; oy += 16) {
+          const d = Math.hypot(x + 0.5 - p[0] - ox, y + 0.5 - p[1] - oy);
+          if (d < d1) { d2 = d1; d1 = d; c = p; } else if (d < d2) d2 = d;
+        }
+        if (d2 - d1 < 1.1) t.px(x, y, gap, Math.floor((t.rnd() - 0.5) * 10));
+        else {
+          let v = c[3] + Math.floor((t.rnd() - 0.5) * 26) + (d1 < 2 ? 10 : 0);
+          if (t.rnd() < pores) v -= 40;
+          t.px(x, y, c[2], v);
+        }
+      }
+    };
+  }
   function buildAtlas() {
     atlasCanvas = document.createElement('canvas');
     atlasCanvas.width = TILE * COLS; atlasCanvas.height = TILE * COLS;
@@ -75,7 +95,7 @@ G.Tex = (function () {
         t.px(x, y, mortar ? 0xb5aca0 : 0x9c4a3a, mortar ? 0 : Math.floor((t.rnd() - 0.5) * 24));
       }
     });
-    tile('basalt', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, (y % 5 === 0) ? 0x2a2a2e : 0x3b3a40, Math.floor((t.rnd() - 0.5) * 18)); });
+    tile('basalt', voronoi([0x3c3634, 0x46403c, 0x34302e, 0x4c4440], 0x1c1818, 7, 0.25));
     tile('obsidian', (t) => { speckle(0x1d1428, 16)(t); for (let i = 0; i < 8; i++) t.px(Math.floor(t.rnd() * 16), Math.floor(t.rnd() * 16), 0x5a3a8a); });
     tile('lava', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const v = Math.sin(x * 0.9 + y * 0.5) * 30 + Math.floor((t.rnd() - 0.5) * 30); t.px(x, y, 0xf06a10, v); } });
     tile('water', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, 0x2e64c8, Math.floor(Math.sin((x + y) * 0.7) * 12 + (t.rnd() - 0.5) * 10)); });
@@ -88,9 +108,11 @@ G.Tex = (function () {
     tile('bedrock', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, t.rnd() < 0.5 ? 0x333333 : 0x575757, 0); });
     tile('darkbrick', (t) => {
       for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
-        const row = Math.floor(y / 4), off = row % 2 ? 4 : 0;
-        const mortar = y % 4 === 3 || (x + off) % 8 === 7;
-        t.px(x, y, mortar ? 0x1e0c0f : 0x4a1a20, mortar ? 0 : Math.floor((t.rnd() - 0.5) * 16));
+        const bx = Math.floor((x + (Math.floor(y / 8) % 2 ? 4 : 0)) / 8), by = Math.floor(y / 8);
+        const mortar = y % 8 === 7 || (x + (by % 2 ? 4 : 0)) % 8 === 7;
+        const shade = ((bx * 7 + by * 13) % 5) * 6 - 12;
+        const bevel = (y % 8 === 0 || (x + (by % 2 ? 4 : 0)) % 8 === 0) ? 14 : 0;
+        t.px(x, y, mortar ? 0x1a1012 : 0x4a2a28, mortar ? 0 : shade + bevel + Math.floor((t.rnd() - 0.5) * 22));
       }
     });
     tile('crate', (t) => {
@@ -165,6 +187,14 @@ G.Tex = (function () {
     tile('rock', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, t.rnd() < 0.3 ? 0x6e6a64 : 0x84807a, Math.floor((t.rnd() - 0.5) * 20)); });
     tile('bush', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { if (t.rnd() < 0.1) t.clear(x, y); else t.px(x, y, t.rnd() < 0.1 ? 0x8a3030 : 0x45603a, Math.floor((t.rnd() - 0.5) * 30)); } });
     tile('mud', speckle(0x5a4a38, 18));
+
+
+    tile('scoria', voronoi([0xa65a42, 0x8c4634, 0xb8694c, 0x9a5240, 0x6e4a44, 0xa04e3a], 0x3a2220, 8, 0.18));
+    tile('scoria_dark', voronoi([0x5a3a36, 0x6e4038, 0x4a3432, 0x7a4a3c], 0x22161a, 8, 0.22));
+    tile('podzol', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const r = t.rnd(); t.px(x, y, r < 0.12 ? 0x7a5a2a : r < 0.2 ? 0x3e4a2a : 0x4e3a28, Math.floor((t.rnd() - 0.5) * 16)); } });
+    tile('podzol_side', (t) => { speckle(0x6a4a30, 24)(t); for (let x = 0; x < 16; x++) for (let y = 0; y < 2 + Math.floor(t.rnd() * 2); y++) t.px(x, y, 0x4e3a28, Math.floor((t.rnd() - 0.5) * 16)); });
+    tile('barbed', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.clear(x, y); for (let x = 0; x < 16; x++) { const y1 = Math.round(8 + Math.sin(x * 0.8) * 5), y2 = Math.round(8 - Math.sin(x * 0.8) * 5); t.px(x, y1, 0x8a8c90); t.px(x, y2, 0x6a6c70); if (x % 4 === 0) { t.px(x, y1 - 1, 0xa0a2a6); t.px(x, y1 + 1, 0xa0a2a6); } } });
+    tile('wallpanel', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, (x % 8 === 0) ? 0x7a7a74 : 0x9a9a92, Math.floor((t.rnd() - 0.5) * 12) + (y > 12 ? -14 : 0)); });
 
     atlasTexture = new THREE.CanvasTexture(atlasCanvas);
     atlasTexture.magFilter = THREE.NearestFilter;

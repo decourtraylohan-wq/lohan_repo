@@ -47,6 +47,31 @@ G.Maps = (function () {
     }
     w.set(x, y + th + 2, z, B.PINE);
   }
+  function tallPine(w, x, y, z, rnd) {
+    const th = 8 + Math.floor(rnd() * 4);
+    for (let i = 1; i <= th; i++) w.set(x, y + i, z, B.DARK_LOG);
+    for (let dy = 3; dy <= th + 1; dy++) {
+      const r = Math.max(0, Math.round((th + 1 - dy) * 0.35));
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.abs(dx) + Math.abs(dz) > r + (dy % 2)) continue;
+        if (!w.get(x + dx, y + dy, z + dz)) w.set(x + dx, y + dy, z + dz, B.PINE);
+      }
+    }
+    w.set(x, y + th + 1, z, B.PINE); w.set(x, y + th + 2, z, B.PINE);
+  }
+  function bigPine(w, x, y, z, rnd) {
+    const th = 12 + Math.floor(rnd() * 5);
+    for (let i = 1; i <= th; i++) for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) w.set(x + dx, y + i, z + dz, B.DARK_LOG);
+    for (let dy = 4; dy <= th + 2; dy++) {
+      const r = Math.max(1, Math.round((th + 2 - dy) * 0.42)) + (dy % 3 === 0 ? 1 : 0);
+      for (let dz = -r; dz <= r + 1; dz++) for (let dx = -r; dx <= r + 1; dx++) {
+        if (Math.hypot(dx - 0.5, dz - 0.5) > r + 0.4) continue;
+        if (!w.get(x + dx, y + dy, z + dz)) w.set(x + dx, y + dy, z + dz, B.PINE);
+      }
+    }
+    for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { w.set(x + dx, y + th + 3, z + dz, B.PINE); w.set(x + dx, y + th + 4, z + dz, B.SNOW); }
+    for (const [dx, dz] of [[-1, 0], [2, 1], [0, 2], [1, -1]]) if (rnd() < 0.6) w.set(x + dx, y + 1, z + dz, B.DARK_LOG);
+  }
   function palm(w, x, y, z) {
     const th = 6;
     for (let i = 1; i <= th; i++) w.set(x, y + i, z, B.LOG);
@@ -244,8 +269,8 @@ G.Maps = (function () {
       for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) {
         const cx = s.x + s.d * i, cz = s.z + j;
         for (let y = F + 1; y <= F + 1 + i; y++) w.set(cx, y, cz, o.stair || B.STONEBRICK);
-        if (i >= 1) w.set(cx, F + 4, cz, B.AIR);
       }
+      for (let i = 1; i < 3; i++) for (let j = -1; j <= 2; j++) w.set(s.x + s.d * i, F + 4, s.z + j, B.AIR);
       // mobilier
       for (let n = 0; n < (x1 - x0) * (z1 - z0) / 18; n++) {
         const x = x0 + 2 + Math.floor(rnd() * (x1 - x0 - 3)), z = z0 + 2 + Math.floor(rnd() * (z1 - z0 - 3));
@@ -277,7 +302,10 @@ G.Maps = (function () {
     for (let x = x0 + 2; x < x1 - 1; x += 3) w.set(x, g + 1, mz + 2, B.CRATE);
     w.set(mx, g + 4, mz, B.GLOW);
   }
-  function car(w, x, z, g, along, rnd) {
+  function car(w, x, z, g, along) {
+    (w.carSpots = w.carSpots || []).push({ x: x + (along === 'z' ? 1 : 2), z: z + (along === 'z' ? 2 : 1), y: g + 1, yaw: along === 'z' ? 0 : Math.PI / 2 });
+  }
+  function voxelCar(w, x, z, g, along, rnd) {
     const col = G.pick([B.CAR_RED, B.CAR_BLUE, B.CAR_WHITE]);
     const L = along === 'z' ? [2, 4] : [4, 2];
     for (let dx = 0; dx < L[0]; dx++) for (let dz = 0; dz < L[1]; dz++) w.set(x + dx, g + 1, z + dz, col);
@@ -502,9 +530,25 @@ G.Maps = (function () {
       for (const [cx, cz, d] of [[10, 52, 'e'], [18, 66, 'n'], [60, 14, 's']]) { const t = w.top(cx + 2, cz + 2); flatten(w, cx + 2, cz + 2, 5, t, B.SNOW, B.DIRT); house(w, cx, cz, 5, 5, t, d, B.LOG, B.LOG, B.SNOW); }
       // belvédère au sommet de la montagne
       const mt = w.top(64, 62);
+      for (let x = 61; x <= 67; x++) for (let z = 59; z <= 65; z++) { const t = w.top(x, z); for (let y = t + 1; y < mt; y++) w.set(x, y, z, (x + y + z) % 3 ? B.STONE : B.COBBLE); }
       w.fill(61, mt, 59, 67, mt, 65, B.PLANKS);
       for (const [x, z] of [[61, 59], [67, 59], [61, 65], [67, 65]]) for (let y = mt + 1; y <= mt + 3; y++) w.set(x, y, z, B.LOG);
       w.fill(61, mt + 4, 59, 67, mt + 4, 65, B.SNOW); w.set(64, mt + 3, 62, B.GLOW);
+      // forêts denses : sol de terre et d'aiguilles, arbres plus hauts et plus gros
+      for (const [fx, fz, rx, rz] of [[15, 37, 11, 10], [65, 30, 10, 9]]) {
+        ellipse(fx, fz, rx, rz, (x, z, d) => { const t = w.top(x, z); if (w.get(x, t, z) === B.SNOW && (d < 0.8 || rnd() < 0.6)) w.set(x, t, z, rnd() < 0.12 ? B.SNOW : B.PODZOL); });
+        for (let i = 0; i < rx * rz * 0.9; i++) {
+          const x = Math.round(fx + (rnd() * 2 - 1) * rx), z = Math.round(fz + (rnd() * 2 - 1) * rz);
+          if (Math.hypot((x - fx) / rx, (z - fz) / rz) > 1) continue;
+          const t = w.top(x, z);
+          if (w.get(x, t, z) !== B.PODZOL && w.get(x, t, z) !== B.SNOW) continue;
+          let free = true; for (let dz = -2; dz <= 3 && free; dz++) for (let dx = -2; dx <= 3 && free; dx++) { const b = w.get(x + dx, t + 1, z + dz); if (b && !G.BLOCKS[b].plant) free = false; }
+          if (!free) continue;
+          if (rnd() < 0.45 && w.top(x + 1, z) === t && w.top(x, z + 1) === t && w.top(x + 1, z + 1) === t) bigPine(w, x, t, z, rnd); else tallPine(w, x, t, z, rnd);
+        }
+        pebbles(w, rnd, [B.PODZOL], 60, 'log_side');
+      }
+      decorate(w, rnd, B.PODZOL, [[B.TALLGRASS, 0.18], [B.DEADBUSH, 0.03]]);
       for (let i = 0; i < 120; i++) {
         const x = 3 + Math.floor(rnd() * 74), z = 3 + Math.floor(rnd() * 74);
         if (Math.hypot(x - 40, z - 40) < 18) continue;
@@ -544,28 +588,88 @@ G.Maps = (function () {
   });
 
   // ---------- 4. Enfer ----------
+  // tour à étages avec escaliers alternés (rangées différentes : aucun conflit entre niveaux)
+  function tower(w, cx, cz, base, floors, mat, doors) {
+    const top = base + floors * 4;
+    w.fill(cx - 3, base, cz - 3, cx + 3, top, cz + 3, mat);
+    w.fill(cx - 2, base + 1, cz - 2, cx + 2, top - 1, cz + 2, B.AIR);
+    for (let k = 1; k < floors; k++) w.fill(cx - 2, base + 4 * k, cz - 2, cx + 2, base + 4 * k, cz + 2, mat);
+    for (let k = 0; k < floors; k++) {
+      const F = base + 4 * k, even = k % 2 === 0;
+      const sx = even ? cx - 2 : cx + 2, d = even ? 1 : -1, rows = even ? [cz - 2, cz - 1] : [cz + 1, cz + 2];
+      for (let i = 0; i < 3; i++) for (const z of rows) { for (let y = F + 1; y <= F + 1 + i; y++) w.set(sx + d * i, y, z, B.OBSIDIAN); }
+      const holeRows = even ? [cz - 2, cz - 1, cz] : [cz, cz + 1, cz + 2];
+      for (let i = 1; i < 3; i++) for (const z of holeRows) w.set(sx + d * i, F + 4, z, B.AIR);
+      // meurtrières
+      for (const [x, z] of [[cx - 3, cz], [cx + 3, cz - 1], [cx, cz - 3], [cx - 1, cz + 3]]) w.set(x, F + 2, z, B.AIR);
+      w.set(cx, F + 3, cz, k === floors - 1 ? B.AIR : w.get(cx, F + 3, cz));
+    }
+    for (let x = cx - 3; x <= cx + 3; x += 2) { w.set(x, top + 1, cz - 3, mat); w.set(x, top + 1, cz + 3, mat); }
+    for (let z = cz - 3; z <= cz + 3; z += 2) { w.set(cx - 3, top + 1, z, mat); w.set(cx + 3, top + 1, z, mat); }
+    w.set(cx + 2, top + 1, cz + 2, B.GLOW); w.set(cx - 2, base + 3, cz + 2, B.GLOW); w.set(cx + 2, base + 7, cz - 2, B.GLOW);
+    for (const [x, z, y] of doors) { w.set(x, y, z, B.AIR); w.set(x, y + 1, z, B.AIR); }
+    return top;
+  }
+  // chenal de lave avec rives en escalier (on peut toujours remonter)
+  function lavaCell(w, x, z) { for (let y = w.top(x, z); y > 4; y--) w.set(x, y, z, B.AIR); w.set(x, 4, z, B.LAVA); w.set(x, 3, z, B.MAGMA); }
+  function bankCell(w, x, z, h) {
+    if (x < 0 || z < 0 || x >= w.W || z >= w.D) return;
+    if (w.get(x, 4, z) === B.LAVA) return;
+    const t = w.top(x, z);
+    if (t > h) { for (let y = h + 1; y <= t; y++) w.set(x, y, z, B.AIR); w.set(x, h, z, B.SCORIA_DARK); }
+  }
   list.push({
-    id: 'enfer', name: 'Forteresse Infernale', desc: 'Lac et rivières de lave, donjon maudit, passerelle surélevée et tour de guet.', stars: 4, rpMult: 1.5, size: 80, height: 34,
-    sky: [0x1a0302, 0x5a1a0a], fog: [0x4a120a, 12, 62], hemi: [0xff9a70, 0x301010, 0.65], sun: [0xff6a3a, 0.6], weather: 'ash',
+    id: 'enfer', name: 'Forteresse Infernale', desc: 'Volcan, lac et rivières de lave, donjon relié à deux tours par une passerelle.', stars: 4, rpMult: 1.5, size: 80, height: 40,
+    sky: [0x1a0302, 0x5a1a0a], fog: [0x4a120a, 12, 66], hemi: [0xff9a70, 0x301010, 0.65], sun: [0xff6a3a, 0.6], weather: 'ash',
     build(w, rnd) {
-      const n = G.makeNoise(404);
-      terrain(w, (x, z) => 7 + (n(x * 0.07, z * 0.07) - 0.5) * 8, (x, y, z, h) => (y === h ? (n(x * 0.3, z * 0.3) > 0.55 ? B.REDSAND : B.BASALT) : B.BASALT));
+      const n = G.makeNoise(404), m = G.makeNoise(414);
+      const VX = 15, VZ = 15;
+      terrain(w, (x, z) => {
+        let h = 7 + (n(x * 0.05, z * 0.05) - 0.5) * 4;
+        const dense = m(x * 0.09, z * 0.09);
+        if (dense > 0.62) h += (dense - 0.62) * 18; // zones plus accidentées
+        const d = Math.hypot(x - VX, z - VZ);
+        h = Math.max(h, 7 + Math.max(0, 17 - d * 1.0));
+        return h;
+      }, (x, y, z, h) => {
+        const d = Math.hypot(x - VX, z - VZ);
+        if (y < h - 2) return B.BASALT;
+        if (d < 18) return (x * 7 + z * 13 + y) % 5 === 0 ? B.SCORIA_DARK : B.SCORIA;
+        return n(x * 0.25, z * 0.25) > 0.58 ? B.REDSAND : n(x * 0.4 + 9, z * 0.4) > 0.55 ? B.SCORIA_DARK : B.SCORIA;
+      });
+      // cratère du volcan
+      const peak = w.top(VX, VZ);
+      ellipse(VX, VZ, 3.6, 3.6, (x, z) => { for (let y = peak - 3; y <= peak + 1; y++) w.set(x, y, z, B.AIR); w.set(x, peak - 3, z, B.LAVA); w.set(x, peak - 4, z, B.MAGMA); });
+      ellipse(VX, VZ, 5.2, 5.2, (x, z, d) => { const t = w.top(x, z); if (d > 0.69 && rnd() < 0.5) w.set(x, t, z, B.MAGMA); });
+      // coulée de lave qui descend du volcan
+      for (let i = 0; i < 9; i++) { const x = VX + 3 + i, z = VZ + Math.round(i * 0.3); const t = w.top(x, z); if (t > 6) { w.set(x, t, z, B.MAGMA); } }
+      // plateau construit à l'ouest, cour du donjon
+      for (let z = 32; z <= 56; z++) for (let x = 3; x <= 31; x++) { for (let y = 1; y < w.H; y++) w.set(x, y, z, y < 7 ? B.BASALT : y === 7 ? ((x + z) % 7 === 0 ? B.SCORIA_DARK : B.DARKBRICK) : B.AIR); }
       flatten(w, 40, 40, 13, 7, B.DARKBRICK, B.BASALT);
-      // rivières de lave
+      // zone plate au sud-est
+      flatten(w, 60, 56, 7, 7, B.SCORIA_DARK, B.BASALT);
+      // rivières de lave + rives en escalier
       const riverZ = (c, x) => Math.round(c === 14 ? 14 + Math.sin(x * 0.12) * 3 : 66 + Math.cos(x * 0.1) * 3);
-      for (let x = 0; x < 80; x++) for (const c of [14, 66]) for (let dz = -1; dz <= 1; dz++) {
-        const z = riverZ(c, x) + dz; const t = w.top(x, z);
-        for (let y = t; y > 4; y--) w.set(x, y, z, B.AIR);
-        w.set(x, 4, z, B.LAVA); w.set(x, 3, z, B.MAGMA);
+      for (let x = 0; x < 80; x++) for (const c of [14, 66]) {
+        if (c === 14 && x < 27) continue; // la rivière nord naît au pied du volcan
+        const zc = riverZ(c, x);
+        for (let dz = -1; dz <= 1; dz++) lavaCell(w, x, zc + dz);
+        for (const s of [-1, 1]) { bankCell(w, x, zc + s * 2, 4); bankCell(w, x, zc + s * 3, 5); bankCell(w, x, zc + s * 4, 6); }
       }
-      // lac de lave à l'est
-      ellipse(68, 40, 8, 10, (x, z) => { const t = w.top(x, z); for (let y = t; y > 4; y--) w.set(x, y, z, B.AIR); w.set(x, 4, z, B.LAVA); w.set(x, 3, z, B.MAGMA); });
+      // lac de lave à l'est, rives douces
+      ellipse(68, 40, 8, 10, (x, z) => lavaCell(w, x, z));
+      ellipse(68, 40, 10.5, 12.5, (x, z, d) => { if (Math.hypot((x - 68) / 8, (z - 40) / 10) >= 1) bankCell(w, x, z, d < 0.85 ? 4 : d < 0.93 ? 5 : 6); });
       ellipse(68, 40, 2.5, 3, (x, z) => { for (let y = 5; y <= 7; y++) w.set(x, y, z, B.OBSIDIAN); });
       w.set(68, 8, 40, B.GLOW);
-      // ponts
-      for (const bx of [14, 40, 66]) for (const c of [14, 66]) for (let dx = -1; dx <= 1; dx++) {
-        const x = bx + dx, zc = riverZ(c, x);
-        for (let dz = -5; dz <= 5; dz++) { const z = zc + dz; for (let y = 7; y < w.H; y++) w.set(x, y, z, B.AIR); w.set(x, 5, z, B.DARKBRICK); w.set(x, 6, z, B.DARKBRICK); }
+      // ponts sur les rivières
+      for (const bx of [14, 40, 66]) for (const c of [14, 66]) {
+        if (c === 14 && bx < 27) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const x = bx + dx, zc = riverZ(c, x);
+          for (let dz = -5; dz <= 5; dz++) { const z = zc + dz; for (let y = 7; y < w.H; y++) w.set(x, y, z, B.AIR); w.set(x, 6, z, B.DARKBRICK); w.set(x, 5, z, B.DARKBRICK); }
+          w.set(x, 7, zc - 5, B.AIR);
+        }
+        for (const dx of [-2, 2]) { const zc = riverZ(c, bx); for (let dz = -3; dz <= 3; dz++) w.set(bx + dx, 7, zc + dz, B.OBSIDIAN); }
       }
       // pont vers l'îlot du lac
       for (let x = 58; x <= 66; x++) for (let dz = 0; dz <= 1; dz++) { w.set(x, 6, 40 + dz, B.DARKBRICK); w.set(x, 5, 40 + dz, B.DARKBRICK); for (let y = 7; y < 12; y++) w.set(x, y, 40 + dz, B.AIR); }
@@ -575,45 +679,55 @@ G.Maps = (function () {
       for (let d = -1; d <= 1; d++) for (let y = 8; y <= 10; y++) { w.set(40 + d, y, k0, B.AIR); w.set(40 + d, y, k1, B.AIR); w.set(k0, y, 40 + d, B.AIR); w.set(k1, y, 40 + d, B.AIR); }
       for (const [tx, tz] of [[k0, k0], [k1, k0], [k0, k1], [k1, k1]]) { w.fill(tx, 8, tz, tx, 14, tz, B.OBSIDIAN); w.set(tx, 15, tz, B.MAGMA); }
       w.fill(39, 8, 39, 41, 8, 41, B.OBSIDIAN); w.set(40, 9, 40, B.GLOW);
-      // tour de guet à l'ouest + passerelle surélevée
-      const wx = 12, wz = 40;
-      w.fill(wx - 3, 7, wz - 3, wx + 3, 19, wz + 3, B.DARKBRICK);
-      w.fill(wx - 2, 8, wz - 2, wx + 2, 18, wz + 2, B.AIR);
-      for (let lv = 0; lv < 3; lv++) {
-        const F = 7 + lv * 4;
-        if (lv > 0) w.fill(wx - 2, F, wz - 2, wx + 2, F, wz + 2, B.DARKBRICK);
-        const d = lv % 2 ? -1 : 1, sx = lv % 2 ? wx + 1 : wx - 1;
-        for (let i = 0; i < 3; i++) { for (let y = F + 1; y <= F + 1 + i; y++) { w.set(sx + d * i, y, wz - 2, B.OBSIDIAN); w.set(sx + d * i, y, wz - 1, B.OBSIDIAN); } if (i >= 1) { w.set(sx + d * i, F + 4, wz - 2, B.AIR); w.set(sx + d * i, F + 4, wz - 1, B.AIR); } }
-      }
-      for (let x = wx - 3; x <= wx + 3; x += 2) { w.set(x, 20, wz - 3, B.DARKBRICK); w.set(x, 20, wz + 3, B.DARKBRICK); }
-      w.set(wx + 2, 20, wz + 2, B.GLOW);
-      for (let y = 8; y <= 9; y++) { w.set(wx + 3, y, wz, B.AIR); w.set(wx + 3, y, wz + 1, B.AIR); }
-      // passerelle vers le donjon (niveau 11) avec escalier de chaque côté
-      for (let x = wx + 4; x <= k0 - 1; x++) for (let dz = 3; dz <= 4; dz++) { w.set(x, 11, wz + dz, B.DARKBRICK); w.set(x, 12, wz + dz + (dz === 3 ? -1 : 1), B.DARKBRICK); }
-      stairs(w, k0 - 5, wz + 3, 7, 4, 1, 0, B.DARKBRICK, 2);
-      for (let x = wx + 4; x <= k0 - 1; x += 3) { const t = w.top(x, wz + 3); for (let y = 8; y < 11; y++) if (!w.get(x, y, wz + 3)) w.set(x, y, wz + 3, B.OBSIDIAN); }
-      stairs(w, wx + 8, wz + 3, w.top(wx + 8, wz + 6) > 6 ? 7 : 7, 4, -1, 0, B.DARKBRICK, 2);
-      // piliers et lumières
-      for (let i = 0; i < 36; i++) {
+      // balcon intérieur du donjon + escalier
+      w.fill(34, 11, 36, 35, 11, 43, B.DARKBRICK);
+      stairs(w, 34, 46, 7, 4, 0, -1, B.DARKBRICK, 2);
+      // deux tours reliées entre elles et au donjon
+      tower(w, 12, 40, 7, 3, B.DARKBRICK, [[15, 40, 8], [15, 41, 8], [15, 40, 12], [15, 41, 12], [12, 43, 16], [11, 43, 16]]);
+      tower(w, 12, 52, 7, 4, B.DARKBRICK, [[15, 52, 8], [15, 53, 8], [12, 49, 16], [11, 49, 16]]);
+      // passerelle haute tour 1 → donjon (on passe dessous), piliers sur les côtés
+      for (let x = 16; x <= 33; x++) for (const z of [40, 41]) w.set(x, 11, z, B.DARKBRICK);
+      for (let x = 16; x <= 33; x++) { w.set(x, 12, 39, B.DARKBRICK); w.set(x, 12, 42, B.DARKBRICK); w.set(x, 11, 39, B.DARKBRICK); w.set(x, 11, 42, B.DARKBRICK); }
+      for (let x = 19; x <= 31; x += 4) for (const z of [39, 42]) for (let y = 8; y <= 10; y++) w.set(x, y, z, B.OBSIDIAN);
+      for (let x = 22; x <= 30; x += 8) w.set(x, 12, 42, B.AIR);
+      // escalier du sol vers la passerelle
+      stairs(w, 25, 43, 7, 4, 1, 0, B.DARKBRICK, 2);
+      for (let x = 25; x <= 28; x++) w.set(x, 12, 42, B.AIR);
+      // pont couvert entre les deux tours (3e niveau)
+      for (let z = 44; z <= 48; z++) for (let x = 11; x <= 12; x++) { w.set(x, 15, z, B.DARKBRICK); w.set(x, 18, z, B.DARKBRICK); }
+      for (let z = 44; z <= 48; z++) { for (let y = 15; y <= 18; y++) { w.set(10, y, z, y === 16 || y === 17 ? (z % 2 ? B.AIR : B.DARKBRICK) : B.DARKBRICK); w.set(13, y, z, y === 16 || y === 17 ? (z % 2 ? B.AIR : B.DARKBRICK) : B.DARKBRICK); } }
+      // bâtisses au sol
+      house(w, 20, 33, 6, 5, 7, 's', B.DARKBRICK, B.OBSIDIAN, B.DARKBRICK);
+      house(w, 21, 48, 7, 6, 7, 'n', B.DARKBRICK, B.OBSIDIAN, B.DARKBRICK);
+      house(w, 4, 46, 4, 6, 7, 'e', B.DARKBRICK, B.OBSIDIAN, B.DARKBRICK);
+      for (const [x, z] of [[18, 45], [28, 54], [6, 34]]) { w.set(x, 8, z, B.OBSIDIAN); w.set(x, 9, z, B.OBSIDIAN); w.set(x, 10, z, B.MAGMA); }
+      // piliers d'obsidienne (moins nombreux), rochers de scories près du volcan
+      for (let i = 0; i < 12; i++) {
         const x = 3 + Math.floor(rnd() * 74), z = 3 + Math.floor(rnd() * 74);
-        if (Math.hypot(x - 40, z - 40) < 16 || Math.hypot(x - 12, z - 40) < 7) continue;
+        if (Math.hypot(x - 40, z - 40) < 15 || (x < 33 && z > 30 && z < 58) || Math.hypot(x - VX, z - VZ) < 9) continue;
         const t = w.top(x, z); if (t < 6) continue;
-        const hh = 2 + Math.floor(rnd() * 6);
-        for (let y = t + 1; y <= t + hh; y++) w.set(x, y, z, rnd() < 0.8 ? B.OBSIDIAN : B.BASALT);
-        if (rnd() < 0.4) w.set(x, t + hh + 1, z, B.GLOW);
+        const hh = 2 + Math.floor(rnd() * 5);
+        for (let y = t + 1; y <= t + hh; y++) w.set(x, y, z, B.OBSIDIAN);
+        if (rnd() < 0.25) w.set(x, t + hh + 1, z, B.GLOW);
       }
-      for (let i = 0; i < 40; i++) { const x = Math.floor(rnd() * 80), z = Math.floor(rnd() * 80); const t = w.top(x, z); if (t >= 6 && w.get(x, t, z) !== B.LAVA) w.set(x, t, z, B.MAGMA); }
-      for (let i = 0; i < 25; i++) { const x = 3 + Math.floor(rnd() * 74), z = 3 + Math.floor(rnd() * 74); if (Math.hypot(x - 40, z - 40) < 15) continue; const t = w.top(x, z); if ((w.get(x, t, z) === B.BASALT || w.get(x, t, z) === B.REDSAND) && !w.get(x, t + 1, z)) deadTree(w, x, t, z, rnd, B.OBSIDIAN); }
-      covers(w, rnd, 18, { avoid: [[40, 40, 9], [12, 40, 6], [68, 40, 11]], surfaces: [B.BASALT, B.REDSAND, B.MAGMA], kinds: ['wall', 'rock', 'wall'], wall: B.DARKBRICK });
-      pebbles(w, rnd, [B.BASALT, B.REDSAND], 200, 'basalt');
+      for (let i = 0; i < 40; i++) {
+        const a = rnd() * Math.PI * 2, r = 6 + rnd() * 14, x = Math.round(VX + Math.cos(a) * r), z = Math.round(VZ + Math.sin(a) * r);
+        if (x < 1 || z < 1 || x > 78 || z > 78) continue;
+        const t = w.top(x, z); if (w.get(x, t, z) === B.LAVA || w.get(x, t, z) === B.MAGMA) continue;
+        w.set(x, t + 1, z, rnd() < 0.5 ? B.SCORIA : B.SCORIA_DARK); if (rnd() < 0.5) w.set(x + 1, t + 1, z, B.SCORIA); if (rnd() < 0.3) w.set(x, t + 2, z, B.SCORIA_DARK);
+      }
+      for (let i = 0; i < 30; i++) { const x = 3 + Math.floor(rnd() * 74), z = 3 + Math.floor(rnd() * 74); if (Math.hypot(x - 40, z - 40) < 15 || (x < 33 && z > 30 && z < 58)) continue; const t = w.top(x, z); if ([B.SCORIA, B.SCORIA_DARK, B.REDSAND].includes(w.get(x, t, z)) && !w.get(x, t + 1, z)) deadTree(w, x, t, z, rnd, B.OBSIDIAN); }
+      for (let i = 0; i < 30; i++) { const x = Math.floor(rnd() * 80), z = Math.floor(rnd() * 80); const t = w.top(x, z); if (t >= 6 && [B.SCORIA, B.SCORIA_DARK].includes(w.get(x, t, z))) w.set(x, t, z, B.MAGMA); }
+      covers(w, rnd, 18, { avoid: [[40, 40, 9], [VX, VZ, 12], [68, 40, 13], [16, 44, 15]], surfaces: [B.SCORIA, B.SCORIA_DARK, B.REDSAND], kinds: ['wall', 'rock', 'wall'], wall: B.DARKBRICK });
+      pebbles(w, rnd, [B.SCORIA, B.SCORIA_DARK, B.REDSAND, B.DARKBRICK], 260, 'scoria');
       decorate(w, rnd, B.REDSAND, [[B.DEADBUSH, 0.04]]);
     },
     player: [40, 37],
     stations: [
       { type: 'box', x: 40, z: 43 },
-      { type: 'wall', weapon: 'smg', x: 35, z: 37 },
+      { type: 'wall', weapon: 'smg', x: 37, z: 36 },
       { type: 'wall', weapon: 'shotgun', x: 45, z: 37 },
-      { type: 'wall', weapon: 'rifle', x: 35, z: 44 },
+      { type: 'wall', weapon: 'rifle', x: 38, z: 45 },
       { type: 'wall', weapon: 'sniper', x: 12, z: 42, top: true },
       { type: 'perk', perk: 'cuirasse', x: 29, z: 33, wave: 1 },
       { type: 'perk', perk: 'souffle', x: 51, z: 33, wave: 2 },
@@ -621,9 +735,9 @@ G.Maps = (function () {
       { type: 'perk', perk: 'mainleste', x: 51, z: 47, wave: 5 },
       { type: 'perk', perk: 'foulee', x: 40, z: 29, wave: 4 },
       { type: 'perk', perk: 'bandouliere', x: 68, z: 42, wave: 7 },
-      { type: 'forge', x: 37, z: 40, wave: 8 },
+      { type: 'forge', x: 43, z: 40, wave: 8 },
       { type: 'bench', x: 45, z: 35 },
-      { type: 'bench', x: 10, z: 41 },
+      { type: 'bench', x: 22, z: 50 },
     ],
   });
 
@@ -668,6 +782,31 @@ G.Maps = (function () {
         const x = axis === 'z' ? c + 1 : a0, z = axis === 'z' ? a0 : c + 1;
         w.set(x, g, z, B.GRATE);
       };
+      // égouts en labyrinthe : galeries secondaires, impasses et salles
+      const carve = (x0, z0, x1, z1) => {
+        const alongX = z0 === z1;
+        const len = alongX ? Math.abs(x1 - x0) : Math.abs(z1 - z0), sx = Math.sign(x1 - x0), sz = Math.sign(z1 - z0);
+        for (let pass = 0; pass < 2; pass++) for (let i = 0; i <= len; i++) for (let o = -2; o <= 2; o++) {
+          const x = alongX ? x0 + sx * i : x0 + o, z = alongX ? z0 + o : z0 + sz * i;
+          if (pass === 0) { for (let y = 5; y <= 10; y++) { const b = w.get(x, y, z); if (b !== B.AIR && b !== B.WATER && b !== B.GLOW) w.set(x, y, z, B.SEWER); } continue; }
+          if (Math.abs(o) > 1) continue;
+          for (let y = 7; y <= 9; y++) w.set(x, y, z, B.AIR);
+          if (w.get(x, 6, z) !== B.WATER) w.set(x, 6, z, B.SEWER);
+          if (i % 7 === 3 && o === 0) w.set(x, 10, z, B.GLOW);
+        }
+      };
+      const room = (cx, cz) => {
+        for (let x = cx - 3; x <= cx + 3; x++) for (let z = cz - 3; z <= cz + 3; z++) for (let y = 5; y <= 11; y++) { const b = w.get(x, y, z); if (b !== B.AIR && b !== B.WATER) w.set(x, y, z, B.SEWER); }
+        for (let x = cx - 2; x <= cx + 2; x++) for (let z = cz - 2; z <= cz + 2; z++) { for (let y = 7; y <= 10; y++) w.set(x, y, z, B.AIR); w.set(x, 6, z, B.MOSSY); }
+        w.set(cx, 6, cz, B.WATER); w.set(cx, 5, cz, B.SEWER); w.set(cx, 11, cz, B.GLOW);
+        w.set(cx - 2, 7, cz - 2, B.CRATE); w.set(cx + 2, 7, cz + 2, B.CRATE); w.set(cx + 2, 8, cz + 2, B.CRATE);
+      };
+      carve(22, 35, 48, 35); carve(61, 22, 61, 48); carve(35, 48, 35, 74); carve(48, 87, 74, 87);
+      carve(87, 14, 87, 48); carve(22, 9, 35, 9); carve(9, 61, 9, 74);
+      room(87, 14); room(35, 9); room(9, 61); room(61, 35); room(35, 61);
+      // les égouts sont fermés en bord de carte
+      for (const c of ROADS) for (const a of [0, 1, S - 2, S - 1]) for (let o = -2; o <= 2; o++) for (let y = 5; y <= 10; y++) { w.set(c + o, y, a, B.SEWER); w.set(a, y, c + o, B.SEWER); }
+      for (const c of ROADS) for (const a of [2, S - 3]) { w.set(c, 8, a, B.GRATE); w.set(a, 8, c, B.GRATE); }
       manhole(48, 'z', 57, 1); manhole(48, 'x', 39, -1); manhole(22, 'z', 30, 1); manhole(74, 'z', 66, -1); manhole(22, 'x', 60, 1); manhole(74, 'x', 30, -1);
       // îlots
       const blocks = [[0, 16], [28, 42], [54, 68], [80, 95]];
@@ -698,6 +837,11 @@ G.Maps = (function () {
           for (let i = 0; i < 9; i++) { const x = x0 + 1 + Math.floor(rnd() * (x1 - x0 - 2)), z = z0 + 1 + Math.floor(rnd() * (z1 - z0 - 2)); if (Math.hypot(x - cx - 2, z - cz - 2) < 6) continue; if (canTree(w, x, z, g, B.GRASS)) tree(w, x, g, z, rnd); }
           for (let x = x0 + 1; x < x1; x += 4) w.set(x, g + 1, z0 + 1, B.PLANKS);
         }
+      }
+      // mur d'enceinte surmonté de barbelés
+      for (let i = 0; i < S; i++) for (const [x, z] of [[i, 0], [i, S - 1], [0, i], [S - 1, i]]) {
+        for (let y = g + 1; y <= g + 4; y++) w.set(x, y, z, i % 6 === 0 ? B.CONCRETE_DARK : B.WALLPANEL);
+        w.set(x, g + 5, z, i % 6 === 0 ? B.CONCRETE_DARK : B.BARBED);
       }
       // voitures abandonnées sur les routes
       for (const c of ROADS) for (let a = 4; a < S - 6; a += 9) {
@@ -736,9 +880,9 @@ G.Maps = (function () {
       const s = [];
       for (const c of ROADS) {
         s.push([c - 3, 2], [c - 3, S - 3], [2, c - 3], [S - 3, c - 3]);
-        s.push([c + 1, 2], [c + 1, S - 3], [2, c + 1], [S - 3, c + 1]); // sorties d'égout
+        s.push([c + 1, 3], [c + 1, S - 4], [3, c + 1], [S - 4, c + 1]); // sorties d'égout (fermées au bord)
       }
-      for (const [x, z] of [[8, 8], [88, 8], [8, 88], [88, 88], [8, 48], [88, 48], [48, 8], [48, 88]]) s.push([x, z]);
+      for (const [x, z] of [[8, 8], [88, 8], [8, 88], [88, 88], [8, 48], [88, 48], [48, 8], [48, 88], [87, 14], [35, 9], [9, 61]]) s.push([x, z]);
       return s;
     },
   });
@@ -765,6 +909,18 @@ G.Maps = (function () {
     const S = def.size;
     const w = new G.World(S, def.height, S);
     def.build(w, G.mulberry32(def.id.length * 1337 + def.stars));
+    // aucune eau ou lave ne doit « flotter » : on borde chaque liquide par un bloc solide
+    for (let y = 1; y < w.H; y++) for (let z = 0; z < w.D; z++) for (let x = 0; x < w.W; x++) {
+      const b = w.data[w.idx(x, y, z)];
+      if (b !== B.WATER && b !== B.LAVA) continue;
+      const fillB = b === B.LAVA ? B.SCORIA_DARK : def.id === 'ville' ? B.SEWER : def.id === 'toundra' ? B.STONE : B.SAND;
+      for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]]) {
+        const nx = x + dx, ny = y + dy, nz = z + dz;
+        if (!w.inside(nx, ny, nz)) continue;
+        const nb = w.get(nx, ny, nz);
+        if (nb === B.AIR || (G.BLOCKS[nb] && G.BLOCKS[nb].plant)) w.set(nx, ny, nz, fillB);
+      }
+    }
     for (const s of def.stations) {
       let t = -1;
       if (s.top) { for (let y = w.H - 2; y >= 1; y--) if (w.canStand(s.x, y, s.z)) { t = y - 1; break; } }
@@ -781,7 +937,7 @@ G.Maps = (function () {
     const raw = def.spawnsFn ? def.spawnsFn(S) : edgeSpawns(S, 3, 6);
     const spawns = [];
     for (const [x, z] of raw) { const y = w.standAt(x, z); if (y < 999 && w.nodeNear(x + 0.5, y, z + 0.5) >= 0) spawns.push([x, y, z]); }
-    return { def, world: w, playerSpawn: new THREE.Vector3(px + 0.5, py, pz + 0.5), spawns, portals: def.portals || [] };
+    return { def, world: w, playerSpawn: new THREE.Vector3(px + 0.5, py, pz + 0.5), spawns, portals: def.portals || [], carSpots: w.carSpots || [] };
   }
 
   return { list, create };

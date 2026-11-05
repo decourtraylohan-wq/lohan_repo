@@ -195,3 +195,9 @@ h3.sec { font-family: 'Bungee', sans-serif; font-weight: 400; letter-spacing: 1p
 #chOpts label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
 #chOpts label.chk { flex-direction: row; color: var(--text); }
 #chOpts input[type=number], #chOpts select { background: #1b2027; color: var(--text); border: 1px solid var(--line); padding: 6px 8px; border-radius: 4px; font: inherit; }
+
+/* vignettes de l'arsenal */
+.card { position: relative; }
+.card .ico { float: left; width: 64px; height: 64px; margin: -4px 10px 4px -4px; image-rendering: auto; background: radial-gradient(circle, rgba(255,255,255,0.08), transparent 70%); border-radius: 8px; }
+.badge { float: left; width: 46px; height: 46px; margin: 0 12px 4px 0; display: grid; place-items: center; border-radius: 50%; font-size: 20px; font-weight: 800; color: #fff; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--c) 70%, white), var(--c) 55%, color-mix(in srgb, var(--c) 50%, black)); box-shadow: 0 0 0 2px rgba(0,0,0,0.6), 0 0 14px color-mix(in srgb, var(--c) 50%, transparent); text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+.card::after { content: ''; display: block; clear: both; }

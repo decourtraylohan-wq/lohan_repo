@@ -129,11 +129,52 @@ G.UI = (function () {
     return h;
   }
 
+  // vignettes 3D des armes et des ennemis, rendues hors écran une seule fois
+  const iconCache = {};
+  let iconR = null;
+  function icon3d(key, makeObj, yaw = 0.6) {
+    if (iconCache[key]) return iconCache[key];
+    try {
+      if (!iconR) {
+        const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+        r.setSize(112, 112); r.outputEncoding = THREE.sRGBEncoding; r.setClearColor(0x000000, 0);
+        const sc = new THREE.Scene();
+        sc.add(new THREE.HemisphereLight(0xffffff, 0x404048, 1.6));
+        const dl = new THREE.DirectionalLight(0xffffff, 1.4); dl.position.set(2, 3, 4); sc.add(dl);
+        iconR = { r, sc, cam: new THREE.PerspectiveCamera(30, 1, 0.01, 100) };
+      }
+      const obj = makeObj();
+      const holder = new THREE.Group(); holder.add(obj); holder.rotation.y = yaw;
+      iconR.sc.add(holder);
+      holder.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(holder), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+      const d = Math.max(size.x, size.y, size.z) * 2.1;
+      iconR.cam.position.set(c.x + d * 0.15, c.y + d * 0.12, c.z + d); iconR.cam.lookAt(c);
+      iconR.r.render(iconR.sc, iconR.cam);
+      iconCache[key] = iconR.r.domElement.toDataURL();
+      iconR.sc.remove(holder);
+      holder.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    } catch (e) { iconCache[key] = ''; }
+    return iconCache[key];
+  }
+  function weaponIcon(id) { return icon3d('w' + id, () => { const g = G.makeWeaponModel(id, false, false); g.rotation.y = Math.PI / 2; return g; }, 0.15); }
+  function enemyIcon(type, T) {
+    return icon3d('e' + type, () => {
+      const f = Object.create(G.Enemy.prototype);
+      Object.assign(f, { game: { scene: { add() {} } }, T, type, shape: T.shape || 'humanoid', soldier: !!T.soldier, size: 1, elite: false, isBoss: false, pos: new THREE.Vector3() });
+      f.buildModel();
+      return f.mesh;
+    }, 0.5);
+  }
+  const hex = (c) => '#' + c.toString(16).padStart(6, '0');
+  const badge = (ic, c) => '<span class="badge" style="--c:' + c + '">' + ic + '</span>';
+  const img = (src) => src ? '<img class="ico" src="' + src + '" alt="">' : '';
+
   function renderArsenal() {
     let h = '<h3 class="sec">Armes</h3><div class="cards">';
     for (const w of Object.values(G.WEAPONS)) {
       const where = w.price ? 'Mur — ' + w.price + ' pts' : w.id === 'pistol' ? 'Arme de départ' : 'Caisse mystère';
-      h += '<div class="card"><h4>' + w.name + '</h4><div class="sub">' + w.cls + ' — ' + (w.id === 'pistol' ? 'Arme de départ' : where) + '</div>' +
+      h += '<div class="card">' + img(weaponIcon(w.id)) + '<h4>' + w.name + '</h4><div class="sub">' + w.cls + ' — ' + (w.id === 'pistol' ? 'Arme de départ' : where) + '</div>' +
         '<div class="row"><span>Dégâts</span><span>' + w.dmg + (w.pellets > 1 ? ' ×' + w.pellets : '') + (w.splash ? ' (zone)' : '') + '</span></div>' +
         '<div class="row"><span>Cadence</span><span>' + w.rpm + ' cps/min' + (w.auto ? ' (auto)' : '') + '</span></div>' +
         '<div class="row"><span>Chargeur</span><span>' + w.mag + ' / ' + w.reserve + '</span></div>' +
@@ -141,17 +182,18 @@ G.UI = (function () {
         '<div class="row"><span>Perforation</span><span>' + w.pierce + '</span></div></div>';
     }
     h += '</div><p class="hint">Forge ★ (dès la vague 8, 5000 pts) : dégâts ×2, chargeur ×1,5, réserve ×1,6.</p>';
-    h += '<h3 class="sec">Atouts</h3><div class="cards">' + Object.values(G.PERKS).map((p) => '<div class="card"><h4 style="color:#' + p.color.toString(16).padStart(6, '0') + '">' + p.icon + ' ' + p.name + '</h4><div class="sub">' + p.price + ' pts</div>' + p.desc + '</div>').join('') + '</div>';
-    h += '<h3 class="sec">Établi ⚒</h3><div class="cards">' + G.CRAFT.map((c) => '<div class="card"><h4>' + c.name + '</h4><div class="sub">' + c.price + ' pts — max ' + c.max + '</div>' + c.desc + '</div>').join('') + '</div>';
-    h += '<h3 class="sec">Bonus</h3><div class="cards">' + Object.values(G.POWERUPS).map((p) => '<div class="card"><h4 style="color:#' + p.color.toString(16).padStart(6, '0') + '">' + p.icon + ' ' + p.name + '</h4><div class="sub">' + ({ 'MUNITIONS MAX': 'Recharge toutes les armes et grenades', 'MORT INSTANTANÉE': 'Tout tue en un coup (20 s)', 'POINTS ×2': 'Points doublés (20 s)', 'BOMBE': 'Élimine tous les zombies (hors boss)', 'FUREUR': 'Munitions infinies sans recharger (15 s)', 'BUTIN': '+500 points', "PLAQUE D'ARMURE": '+50 armure et +1 plaque' }[p.name]) + '</div></div>').join('') + '</div>';
+    h += '<h3 class="sec">Atouts</h3><div class="cards">' + Object.values(G.PERKS).map((p) => '<div class="card">' + badge(p.icon, hex(p.color)) + '<h4 style="color:' + hex(p.color) + '">' + p.name + '</h4><div class="sub">' + p.price + ' pts</div>' + p.desc + '</div>').join('') + '</div>';
+    const craftIc = { barricade: ['▬', '#958866'], shield: ['⛉', '#50b0ff'], plate: ['⛨', '#5aa0ff'], grenade: ['💣', '#7a8a5a'] };
+    h += '<h3 class="sec">Établi ⚒</h3><div class="cards">' + G.CRAFT.map((c) => '<div class="card">' + badge(craftIc[c.id][0], craftIc[c.id][1]) + '<h4>' + c.name + '</h4><div class="sub">' + c.price + ' pts — max ' + c.max + '</div>' + c.desc + '</div>').join('') + '</div>';
+    h += '<h3 class="sec">Bonus</h3><div class="cards">' + Object.values(G.POWERUPS).map((p) => '<div class="card">' + badge(p.icon, hex(p.color)) + '<h4 style="color:' + hex(p.color) + '">' + p.name + '</h4><div class="sub">' + ({ 'MUNITIONS MAX': 'Recharge toutes les armes et grenades', 'MORT INSTANTANÉE': 'Tout tue en un coup (20 s)', 'POINTS ×2': 'Points doublés (20 s)', 'BOMBE': 'Élimine tous les zombies (hors boss)', 'FUREUR': 'Munitions infinies sans recharger (15 s)', 'BUTIN': '+500 points', "PLAQUE D'ARMURE": '+50 armure et +1 plaque' }[p.name]) + '</div></div>').join('') + '</div>';
     const ZD = { crawler: 'Rampe au sol : petite cible, difficile à toucher. Vague 4+.', stalker: 'Créature à quatre pattes qui bondit sur vous. Vague 7+.', screamer: 'Son cri vous ralentit, brouille la vue et enrage les zombies proches. Vague 9+.', walker: 'Lent au début, il accélère au fil des vagues.', runner: 'Rapide et fragile. Vague 3+.', brute: 'Énorme réservoir de PV, frappe fort. Vague 6+.', bloater: 'Explose au contact ou à sa mort. Vague 8+.', spitter: 'Garde ses distances et crache de l\'acide. Vague 11+.', armored: 'Casque qui absorbe les tirs à la tête.', minion: 'Invoqué par le Nécromancien.' };
-    h += '<h3 class="sec">Bestiaire</h3><div class="cards">' + Object.entries(G.ZTYPES).map(([k, z]) => '<div class="card"><h4>' + z.name + '</h4><div class="sub">PV ×' + z.hp + ' — vitesse ' + z.speed + '</div>' + ZD[k] + '</div>').join('') + '</div>';
+    h += '<h3 class="sec">Bestiaire</h3><div class="cards">' + Object.entries(G.ZTYPES).map(([k, z]) => '<div class="card">' + img(enemyIcon(k, z)) + '<h4>' + z.name + '</h4><div class="sub">PV ×' + z.hp + ' — vitesse ' + z.speed + '</div>' + ZD[k] + '</div>').join('') + '</div>';
     const BD = { colosse: 'Vagues 5, 20, 35… Frappe le sol : sautez pour éviter l\'onde de choc !', necro: 'Vagues 10, 25, 40… Invoque des squelettes, se téléporte et lance des orbes.', belier: 'Vagues 15, 30, 45… Charge en ligne droite. Faites-le percuter un mur pour l\'étourdir (dégâts ×2).' };
-    h += '<h3 class="sec">Boss</h3><div class="cards">' + G.BOSSES.map((b) => '<div class="card"><h4 style="color:#ff5a5a">' + b.name + '</h4><div class="sub">' + b.hp + ' PV de base</div>' + BD[b.id] + '</div>').join('') + '</div>';
-    const SD = { rifleman: 'Rafales au fusil d\'assaut, garde ses distances.', assault: 'Fonce au contact avec sa mitraillette.', breacher: 'Fusil à pompe et casque : dévastateur de près.', sniper: 'Un laser rouge trahit sa visée : mettez-vous à couvert !', heavy: 'Blindé, longues rafales de mitrailleuse.', grenadier: 'Lance des grenades pour vous déloger.' };
-    h += '<h3 class="sec">Mode Soldats</h3><div class="cards">' + Object.entries(G.STYPES).map(([k, z]) => '<div class="card"><h4>' + z.name + '</h4><div class="sub">PV ×' + z.hp + ' — ' + G.WEAPONS[z.weapon].name + '</div>' + SD[k] + '</div>').join('') + '</div>';
+    h += '<h3 class="sec">Boss</h3><div class="cards">' + G.BOSSES.map((b) => '<div class="card">' + img(enemyIcon(b.id, b)) + '<h4 style="color:#ff5a5a">' + b.name + '</h4><div class="sub">' + b.hp + ' PV de base</div>' + BD[b.id] + '</div>').join('') + '</div>';
+    const SD = { knifer: 'Cagoulé, il court en zigzag et vous attaque au couteau.', marksman: 'Reste loin, bien caché, et vous allume à distance.', rifleman: 'Rafales au fusil d\'assaut, garde ses distances.', assault: 'Fonce au contact avec sa mitraillette.', breacher: 'Fusil à pompe et casque : dévastateur de près.', sniper: 'Un laser rouge trahit sa visée : mettez-vous à couvert !', heavy: 'Blindé, longues rafales de mitrailleuse.', grenadier: 'Lance des grenades pour vous déloger.' };
+    h += '<h3 class="sec">Mode Soldats</h3><div class="cards">' + Object.entries(G.STYPES).map(([k, z]) => '<div class="card">' + img(enemyIcon(k, z)) + '<h4>' + z.name + '</h4><div class="sub">PV ×' + z.hp + ' — ' + (G.WEAPONS[z.weapon] ? G.WEAPONS[z.weapon].name : 'Couteau') + '</div>' + SD[k] + '</div>').join('') + '</div>';
     const SBD = { juggernaut: 'Armure lourde et minigun : il lance la rotation avant de tirer. Restez à couvert.', commandant: 'Appelle des renforts et lance des grenades.', pyro: 'Lance-flammes à courte portée et zones de feu. Gardez vos distances.' };
-    h += '<h3 class="sec">Boss soldats</h3><div class="cards">' + G.SBOSSES.map((b) => '<div class="card"><h4 style="color:#ff5a5a">' + b.name + '</h4><div class="sub">' + b.hp + ' PV de base</div>' + SBD[b.id] + '</div>').join('') + '</div>';
+    h += '<h3 class="sec">Boss soldats</h3><div class="cards">' + G.SBOSSES.map((b) => '<div class="card">' + img(enemyIcon(b.id, b)) + '<h4 style="color:#ff5a5a">' + b.name + '</h4><div class="sub">' + b.hp + ' PV de base</div>' + SBD[b.id] + '</div>').join('') + '</div>';
     $('arsenalBody').innerHTML = h;
   }
 
@@ -223,7 +265,7 @@ G.UI = (function () {
     setHTML('inv', (d.plateT > 0 ? '<div class="on">Plaque en cours…</div>' : '') + (d.crouch ? '<div>Accroupi</div>' : '') +
       '<div class="' + (d.buildItem === 'barricade' ? 'on' : '') + '">🧱 Barricade × ' + d.builds.barricade + '</div>' +
       '<div class="' + (d.buildItem === 'shield' ? 'on' : '') + '">🛡 Bouclier × ' + d.builds.shield + '</div>' +
-      (d.buildItem ? '<div class="on">[Clic] poser — [B] changer</div>' : '<div style="opacity:.6">[B] construire · [X] plaque</div>'));
+      (d.buildItem ? '<div class="on">[Clic] poser — [F] changer</div>' : '<div style="opacity:.6">[F] construire · [X] plaque</div>'));
     $('cheattag').classList.toggle('hidden', !d.cheats);
     setText('reloadhint', d.reloading ? 'Rechargement…' : (typeof d.mag === 'number' && d.mag === 0 && d.reserve === 0 ? 'Plus de munitions !' : (typeof d.mag === 'number' && d.mag <= 3 ? '[R] Recharger' : '')));
     setHTML('slots', d.slots.map((s, i) => '<span class="' + (s.cur ? 'cur' : '') + '">' + (i + 1) + ' · ' + G.esc(s.name) + '</span>').join(''));
@@ -305,7 +347,7 @@ G.UI = (function () {
     $('chOn').addEventListener('change', () => $('chOpts').classList.toggle('hidden', !$('chOn').checked));
     $('btnLaunch').addEventListener('click', () => {
       G.Audio.init();
-      const cheats = $('chOn').checked ? { on: true, wave: Number($('chWave').value) || 1, points: Number($('chPts').value) || 0, weapons: [$('chW1').value, $('chW2').value, $('chW3').value].filter(Boolean), upgraded: $('chUp').checked, allPerks: $('chPerks').checked, god: $('chGod').checked, ammo: $('chAmmo').checked } : null;
+      const cheats = $('chOn').checked ? { on: true, wave: Number($('chWave').value) || 1, points: Number($('chPts').value) || 0, weapons: [$('chW1').value, $('chW2').value, $('chW3').value].filter(Boolean), upgraded: $('chUp').checked, allPerks: $('chPerks').checked, god: $('chGod').checked, ammo: $('chAmmo').checked, spectator: $('chSpec').checked } : null;
       G.game.start(selMap, selMode, selType, cheats);
     });
     document.querySelectorAll('.gtype').forEach((b) => b.addEventListener('click', () => { selType = b.dataset.type; G.Audio.S.click(); renderPlay(); }));

@@ -40,6 +40,7 @@ G.Player = class {
     this.h = 1.8; this.eyeCur = this.eyeH; this.roll = 0;
     this.builds = { barricade: 0, shield: 0 };
     this.isPlayer = true;
+    this.crouchLock = false; this.vehicle = null; this.spectator = false; this.camOrbit = 0;
     this.setViewWeapon();
   }
   newSlot(id, up = false) { const s = up ? G.upgradeStats(id) : G.WEAPONS[id]; return { id, up, mag: s.mag, reserve: s.reserve }; }
@@ -113,7 +114,7 @@ G.Player = class {
     this.vmGun.add(this.flash);
   }
 
-  onMouseMove(dx, dy) { this.lookDX += dx; this.lookDY += dy; this.sway.x += dx * 0.0004; this.sway.y += dy * 0.0004; }
+  onMouseMove(dx, dy) { if (this.vehicle) { this._orbitDX = (this._orbitDX || 0) + dx; return; } this.lookDX += dx; this.lookDY += dy; this.sway.x += dx * 0.0004; this.sway.y += dy * 0.0004; }
 
   update(dt, cam) {
     const game = this.game, w = game.world, set = G.Ranked.profile.settings;
@@ -122,11 +123,14 @@ G.Player = class {
     this.yaw -= this.lookDX * sens; this.pitch -= this.lookDY * sens;
     this.lookDX = this.lookDY = 0;
     this.pitch = G.clamp(this.pitch, -1.55, 1.55);
+    if (this.vehicle) { this.updateVehicleInput(); this.vmRoot.visible = false; this.knife.visible = false; return; }
+    if (this.spectator) { this.updateSpectator(dt, cam); return; }
 
     // déplacement
     const k = this.keys;
-    const fwd = (k.KeyW || k.KeyZ ? 1 : 0) - (k.KeyS ? 1 : 0);
-    const str = (k.KeyD ? 1 : 0) - (k.KeyA || k.KeyQ ? 1 : 0);
+    // touches physiques : ZQSD sur AZERTY = WASD sur QWERTY
+    const fwd = (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0);
+    const str = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0);
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     const wish = new THREE.Vector3(-sin * fwd + cos * str, 0, -cos * fwd - sin * str);
     if (wish.lengthSq() > 1) wish.normalize();
@@ -150,7 +154,7 @@ G.Player = class {
       G.Audio.S.slide();
     }
     this.crouchHeld = crouchKey;
-    const wantCrouch = crouchKey || this.slideT > 0;
+    const wantCrouch = crouchKey || this.slideT > 0 || this.crouchLock;
     if (wantCrouch) { this.crouch = true; this.h = 1.2; }
     else if (this.crouch && !w.collides(this.pos.x, this.pos.y, this.pos.z, this.w / 2, 1.8, 'player')) { this.crouch = false; this.h = 1.8; }
     let speed = (sprinting ? 7.0 : 4.6) * st.move * (foulee ? 1.2 : 1);
@@ -303,6 +307,47 @@ G.Player = class {
       s.m.position.addScaledVector(s.v, dt); s.m.rotation.x += dt * 20; s.m.rotation.y += dt * 13;
       if (s.life <= 0) { this.vmScene.remove(s.m); this.shells.splice(i, 1); }
     }
+  }
+  updateVehicleInput() {
+    const k = this.keys;
+    this.vehicle.input = { fwd: !!k.KeyW, back: !!k.KeyS, left: !!k.KeyA, right: !!k.KeyD, brake: !!k.Space };
+  }
+  // caméra à la troisième personne derrière le véhicule (la souris fait tourner la vue)
+  vehicleCamera(cam, dt) {
+    const v = this.vehicle;
+    this.camOrbit = (this.camOrbit || 0);
+    const set = G.Ranked.profile.settings;
+    this.camOrbit -= (this._orbitDX || 0) * 0.003 * set.sens; this._orbitDX = 0;
+    if (!this.keys.ShiftLeft) this.camOrbit *= Math.max(0, 1 - dt * 1.5);
+    const a = v.yaw + Math.PI + this.camOrbit;
+    const target = v.pos.clone().add(new THREE.Vector3(0, 1.3, 0));
+    const want = target.clone().add(new THREE.Vector3(Math.sin(a) * 7.5, 2.6, Math.cos(a) * 7.5));
+    if (!this._camPos) this._camPos = want.clone();
+    this._camPos.lerp(want, Math.min(1, dt * 6));
+    cam.position.copy(this._camPos);
+    cam.lookAt(target);
+    this.yaw = v.yaw + Math.PI; this.pitch = 0;
+    this.pos.set(v.pos.x, v.pos.y + 0.5, v.pos.z); this.eye.set(v.pos.x, v.pos.y + 1.3, v.pos.z);
+    this.vel.copy(v.forward.multiplyScalar(v.speed));
+    if (Math.abs(cam.fov - G.Ranked.profile.settings.fov) > 0.01) { cam.fov = G.Ranked.profile.settings.fov; cam.updateProjectionMatrix(); }
+  }
+  // mode spectateur (triche) : vol libre à travers les murs
+  updateSpectator(dt, cam) {
+    const k = this.keys;
+    const fwd = (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0), str = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0);
+    const dir = this.lookDir(), right = new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+    const v = dir.multiplyScalar(fwd).addScaledVector(right, str);
+    if (k.Space) v.y += 1; if (k.KeyC) v.y -= 1;
+    if (v.lengthSq() > 0) v.normalize();
+    const sp = k.ShiftLeft || k.ShiftRight ? 28 : 11;
+    this.vel.copy(v.multiplyScalar(sp));
+    this.pos.addScaledVector(this.vel, dt);
+    const w = this.game.world;
+    this.pos.x = G.clamp(this.pos.x, 0.5, w.W - 0.5); this.pos.z = G.clamp(this.pos.z, 0.5, w.D - 0.5); this.pos.y = G.clamp(this.pos.y, 0, w.H + 30);
+    this.eye.set(this.pos.x, this.pos.y + 1.6, this.pos.z); this.camY = this.eye.y;
+    cam.position.copy(this.eye);
+    cam.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+    this.vmRoot.visible = false; this.knife.visible = false;
   }
   usePlate() {
     if (this.plates <= 0 || this.armor >= this.maxArmor || this.plateT > 0) { if (this.plates <= 0) G.Audio.S.deny(); return; }

@@ -147,6 +147,7 @@ G.Audio = (function () {
     buildBreak(pos) { if (!ctx) return; const d = out(pos, 0.8, 0.3); noise(d, 0.5, 600, 0.8, 0.7, 'lowpass', 0.002, 0, brownBuf, 150); },
     portal() { if (!ctx) return; const d = out(null, 0.7, 0.6); tone(d, 200, 0.8, 0.2, 'sine', 1200); tone(d, 300, 0.8, 0.15, 'triangle', 1800, 0.1); },
     knifeHit() { if (!ctx) return; const d = out(null, 0.7, 0.05); noise(d, 0.1, 700, 1.2, 0.6, 'lowpass', 0.002, 0, brownBuf); tone(d, 900, 0.05, 0.1, 'triangle', 500); },
+    glass(pos) { if (!ctx) return; const d = out(pos || null, 0.6, 0.2); noise(d, 0.25, 5000, 0.8, 0.5, 'highpass'); for (let i = 0; i < 4; i++) tone(d, G.rand(2500, 4500), 0.12, 0.05, 'sine', null, i * 0.03); },
     land() { if (!ctx) return; noise(out(null, 0.5, 0.05), 0.12, 400, 1, 0.4, 'lowpass', 0.002, 0, brownBuf); },
   };
 
