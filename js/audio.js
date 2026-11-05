@@ -140,6 +140,13 @@ G.Audio = (function () {
     rankUp() { if (!ctx) return; const d = out(null, 0.7, 0.6); [523, 659, 784, 1046, 1318].forEach((f, i) => tone(d, f, 0.35, 0.18, 'triangle', null, i * 0.1)); },
     click() { if (!ctx) return; tone(out(null, 0.4, 0), 900, 0.03, 0.1, 'square'); },
     step(surface) { if (!ctx) return; const d = out(null, 0.35, 0.05); noise(d, 0.07, surface === 'hard' ? 1400 : 500, 1.2, 0.18, 'lowpass', 0.003, 0, brownBuf); },
+    slide() { if (!ctx) return; noise(out(null, 0.5, 0.05), 0.7, 900, 0.8, 0.35, 'lowpass', 0.02, 0, noiseBuf, 300); },
+    plate() { if (!ctx) return; const d = out(null, 0.7, 0.1); noise(d, 0.05, 3000, 3, 0.5, 'bandpass'); tone(d, 220, 0.12, 0.25, 'square', 140, 0.05); noise(d, 0.08, 1600, 4, 0.4, 'bandpass', 0.002, 0.12); },
+    build() { if (!ctx) return; const d = out(null, 0.7, 0.2); for (let i = 0; i < 3; i++) { noise(d, 0.07, 900, 2, 0.5, 'bandpass', 0.002, i * 0.09); tone(d, 160, 0.05, 0.2, 'square', 120, i * 0.09); } },
+    buildHit(pos) { if (!ctx) return; noise(out(pos, 0.5, 0.1), 0.08, 700, 1.5, 0.4, 'bandpass', 0.002, 0, brownBuf); },
+    buildBreak(pos) { if (!ctx) return; const d = out(pos, 0.8, 0.3); noise(d, 0.5, 600, 0.8, 0.7, 'lowpass', 0.002, 0, brownBuf, 150); },
+    portal() { if (!ctx) return; const d = out(null, 0.7, 0.6); tone(d, 200, 0.8, 0.2, 'sine', 1200); tone(d, 300, 0.8, 0.15, 'triangle', 1800, 0.1); },
+    knifeHit() { if (!ctx) return; const d = out(null, 0.7, 0.05); noise(d, 0.1, 700, 1.2, 0.6, 'lowpass', 0.002, 0, brownBuf); tone(d, 900, 0.05, 0.1, 'triangle', 500); },
     land() { if (!ctx) return; noise(out(null, 0.5, 0.05), 0.12, 400, 1, 0.4, 'lowpass', 0.002, 0, brownBuf); },
   };
 

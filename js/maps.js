@@ -103,6 +103,102 @@ G.Maps = (function () {
     for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) { const b = w.get(x + dx, t + 1, z + dz); if (b && !G.BLOCKS[b].plant) return false; }
     return true;
   }
+
+  // ---- variété de végétation ----
+  function birch(w, x, y, z, rnd) {
+    const th = 5 + Math.floor(rnd() * 3);
+    for (let i = 1; i <= th; i++) w.set(x, y + i, z, B.BIRCH);
+    for (let dy = th - 2; dy <= th + 1; dy++) {
+      const r = dy >= th ? 1 : 2;
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.abs(dx) === r && Math.abs(dz) === r) continue;
+        if (!w.get(x + dx, y + dy, z + dz) || G.BLOCKS[w.get(x + dx, y + dy, z + dz)].plant) w.set(x + dx, y + dy, z + dz, B.BIRCH_LEAVES);
+      }
+    }
+    w.set(x, y + th + 2, z, B.BIRCH_LEAVES);
+  }
+  function bigOak(w, x, y, z, rnd) {
+    const th = 6 + Math.floor(rnd() * 2);
+    for (let i = 1; i <= th; i++) for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [1, 1]]) w.set(x + dx, y + i, z + dz, B.DARK_LOG);
+    for (let dy = th - 2; dy <= th + 2; dy++) {
+      const r = dy === th + 2 ? 2 : dy === th - 2 ? 3 : 4;
+      for (let dz = -r; dz <= r + 1; dz++) for (let dx = -r; dx <= r + 1; dx++) {
+        if (Math.hypot(dx - 0.5, dz - 0.5) > r + 0.3 || rnd() < 0.08) continue;
+        const b = w.get(x + dx, y + dy, z + dz);
+        if (!b || G.BLOCKS[b].plant) w.set(x + dx, y + dy, z + dz, B.DARK_LEAVES);
+      }
+    }
+    // racines
+    for (const [dx, dz] of [[-1, 0], [2, 1], [0, 2], [1, -1]]) if (rnd() < 0.7) w.set(x + dx, y + 1, z + dz, B.DARK_LOG);
+  }
+  function autumnTree(w, x, y, z, rnd) {
+    tree(w, x, y, z, rnd);
+    for (let dy = 2; dy <= 8; dy++) for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (w.get(x + dx, y + dy, z + dz) === B.LEAVES) w.set(x + dx, y + dy, z + dz, B.AUTUMN_LEAVES);
+  }
+  function bush(w, x, y, z, rnd) {
+    w.set(x, y + 1, z, B.BUSH);
+    for (const [dx, dz] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) if (rnd() < 0.5 && !w.get(x + dx, y + 1, z + dz) && w.isSolid(x + dx, y, z + dz)) w.set(x + dx, y + 1, z + dz, B.BUSH);
+    if (rnd() < 0.3) w.set(x, y + 2, z, B.BUSH);
+  }
+  function deadTree(w, x, y, z, rnd, log = B.DARK_LOG) {
+    const th = 3 + Math.floor(rnd() * 3);
+    for (let i = 1; i <= th; i++) w.set(x, y + i, z, log);
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (rnd() < 0.5) { w.set(x + dx, y + th - 1, z + dz, log); if (rnd() < 0.5) w.set(x + dx * 2, y + th, z + dz * 2, log); }
+  }
+  function cactus(w, x, y, z, rnd) {
+    const hh = 2 + Math.floor(rnd() * 3);
+    for (let i = 1; i <= hh; i++) w.set(x, y + i, z, B.CACTUS);
+    if (hh >= 3 && rnd() < 0.6) {
+      const [dx, dz] = G.pick([[1, 0], [-1, 0], [0, 1], [0, -1]]);
+      const ay = y + 2;
+      if (!w.get(x + dx, ay, z + dz)) { w.set(x + dx, ay, z + dz, B.CACTUS); w.set(x + dx, ay + 1, z + dz, B.CACTUS); }
+    }
+  }
+  // cailloux et branches au sol (détails sans collision)
+  function pebbles(w, rnd, surfaces, count, tile = 'rock') {
+    for (let i = 0; i < count; i++) {
+      const x = 1 + Math.floor(rnd() * (w.W - 2)), z = 1 + Math.floor(rnd() * (w.D - 2));
+      const t = w.top(x, z);
+      if (!surfaces.includes(w.get(x, t, z)) || w.get(x, t + 1, z)) continue;
+      const n = 1 + Math.floor(rnd() * 3);
+      for (let k = 0; k < n; k++) {
+        const sz = 0.12 + rnd() * 0.25;
+        w.details.push({ x: x + 0.2 + rnd() * 0.6, y: t + 1, z: z + 0.2 + rnd() * 0.6, sx: sz * (0.8 + rnd() * 0.6), sy: sz * 0.6, sz, tile });
+      }
+      if (rnd() < 0.08) w.details.push({ x: x + 0.5, y: t + 1, z: z + 0.5, sx: rnd() < 0.5 ? 1.4 : 0.22, sy: 0.22, sz: rnd() < 0.5 ? 0.22 : 1.4, tile: 'log_side' });
+    }
+  }
+  // abris (sacs de sable, caisses, murets) répartis sur la carte
+  function covers(w, rnd, count, opts = {}) {
+    const avoid = opts.avoid || [];
+    let placed = 0, tries = 0;
+    while (placed < count && tries++ < count * 30) {
+      const x = 4 + Math.floor(rnd() * (w.W - 8)), z = 4 + Math.floor(rnd() * (w.D - 8));
+      if (avoid.some(([ax, az, r]) => Math.hypot(x - ax, z - az) < r)) continue;
+      const t = w.top(x, z);
+      if (opts.surfaces && !opts.surfaces.includes(w.get(x, t, z))) continue;
+      let ok = true;
+      for (let dz = -2; dz <= 2 && ok; dz++) for (let dx = -2; dx <= 2 && ok; dx++) {
+        const tt = w.top(x + dx, z + dz);
+        if (Math.abs(tt - t) > 0 || w.get(x + dx, t + 1, z + dz) && !G.BLOCKS[w.get(x + dx, t + 1, z + dz)].plant || G.BLOCKS[w.get(x + dx, t, z + dz)].liquid) ok = false;
+      }
+      if (!ok) continue;
+      const kind = opts.kinds ? G.pick(opts.kinds) : G.pick(['sand', 'sand', 'crates', 'wall']);
+      const along = rnd() < 0.5;
+      const put = (dx, dy, dz, b) => w.set(along ? x + dx : x + dz, t + 1 + dy, along ? z + dz : z + dx, b);
+      if (kind === 'sand') { for (let i = -1; i <= 1; i++) put(i, 0, 0, B.SANDBAG); if (rnd() < 0.5) { put(-1, 0, 1, B.SANDBAG); } }
+      else if (kind === 'crates') { put(0, 0, 0, B.CRATE); put(1, 0, 0, B.CRATE); put(0, 1, 0, B.CRATE); put(0, 0, 1, B.CRATE); }
+      else if (kind === 'wall') { const m = opts.wall || B.MOSSY; for (let i = -1; i <= 2; i++) { put(i, 0, 0, m); if (i === 0 || i === 1) put(i, 1, 0, m); } }
+      else if (kind === 'barrier') { for (let i = -1; i <= 1; i++) put(i, 0, 0, B.CONCRETE); }
+      else if (kind === 'rock') { put(0, 0, 0, B.ROCK); put(1, 0, 0, B.ROCK); put(0, 1, 0, B.ROCK); put(0, 0, 1, B.STONE); }
+      placed++;
+    }
+  }
+  function portalPad(w, x, y, z) {
+    w.set(x, y, z, B.PORTAL);
+    for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { w.set(x + dx, y + 1, z + dz, B.OBSIDIAN); w.set(x + dx, y + 2, z + dz, B.OBSIDIAN); w.set(x + dx, y + 3, z + dz, B.GLOW); }
+  }
+
   function edgeSpawns(size, margin, step) {
     const s = [];
     for (let i = margin; i < size - margin; i += step) { s.push([i, margin]); s.push([i, size - 1 - margin]); s.push([margin, i]); s.push([size - 1 - margin, i]); }
@@ -195,7 +291,7 @@ G.Maps = (function () {
   // ---------- 1. Village ----------
   list.push({
     id: 'village', name: 'Village Sylvestre', desc: 'Hameau, lac, rivière, champs de blé et collines boisées. Idéal pour débuter.', stars: 1, rpMult: 1.0, size: 80, height: 32,
-    sky: [0x5d9ee8, 0xcfe4f5], fog: [0xb8d4ec, 24, 84], hemi: [0xe6f2ff, 0x5a4a30, 0.75], sun: [0xfff0d0, 0.95], weather: null,
+    sky: [0x6a8db4, 0xc9d3da], fog: [0xb4c0c8, 24, 84], hemi: [0xdde6ee, 0x4a4234, 0.7], sun: [0xfbecd6, 0.85], weather: null,
     build(w, rnd) {
       const n = G.makeNoise(101);
       terrain(w, (x, z) => {
@@ -252,9 +348,14 @@ G.Maps = (function () {
         if (Math.hypot(x - 40, z - 40) < 18) continue;
         if (x < 30 && z > 38) continue;
         const t = w.top(x, z);
-        if (canTree(w, x, z, t, B.GRASS)) tree(w, x, t, z, rnd);
+        if (!canTree(w, x, z, t, B.GRASS)) continue;
+        const r = rnd();
+        if (r < 0.45) tree(w, x, t, z, rnd); else if (r < 0.68) birch(w, x, t, z, rnd); else if (r < 0.8 && canTree(w, x + 1, z + 1, t, B.GRASS)) bigOak(w, x, t, z, rnd); else if (r < 0.9) autumnTree(w, x, t, z, rnd); else bush(w, x, t, z, rnd);
       }
-      decorate(w, rnd, B.GRASS, [[B.TALLGRASS, 0.12], [B.FLOWER_R, 0.02], [B.FLOWER_Y, 0.02]]);
+      for (let i = 0; i < 60; i++) { const x = 2 + Math.floor(rnd() * 76), z = 2 + Math.floor(rnd() * 76); const t = w.top(x, z); if (Math.hypot(x - 40, z - 40) > 10 && w.get(x, t, z) === B.GRASS && !w.get(x, t + 1, z)) bush(w, x, t, z, rnd); }
+      covers(w, rnd, 18, { avoid: [[40, 40, 9], [13, 44, 6], [15, 15, 5]], surfaces: [B.GRASS, B.GRAVEL, B.PATH], kinds: ['sand', 'crates', 'wall', 'sand'] });
+      pebbles(w, rnd, [B.GRASS, B.PATH, B.GRAVEL, B.SAND], 260);
+      decorate(w, rnd, B.GRASS, [[B.TALLGRASS, 0.12], [B.FLOWER_R, 0.012], [B.FLOWER_Y, 0.012]]);
     },
     player: [40, 42],
     stations: [
@@ -270,6 +371,8 @@ G.Maps = (function () {
       { type: 'perk', perk: 'foulee', x: 27, z: 44, wave: 4 },
       { type: 'perk', perk: 'bandouliere', x: 13, z: 44, wave: 7 },
       { type: 'forge', x: 38, z: 38, wave: 8 },
+      { type: 'bench', x: 30, z: 29 },
+      { type: 'bench', x: 10, z: 46 },
     ],
   });
 
@@ -284,6 +387,23 @@ G.Maps = (function () {
         if (z < 26) { const mk = m(x * 0.07, z * 0.07); const t = G.clamp((mk - 0.48) / 0.12, 0, 1); h += t * (8 + (z < 12 ? 3 : 0)); }
         return h;
       }, (x, y, z, h) => (z < 26 && y > 8 ? (y % 3 === 0 ? B.CLAY : B.REDSAND) : y > h - 3 ? B.SAND : B.SANDSTONE));
+      // plateau du canyon avec rampe
+      for (let z = 0; z < 26; z++) for (let x = 46; x < 76; x++) {
+        if (Math.hypot(x - 60, z - 12) > 11.5) continue;
+        for (let y = 1; y <= 17; y++) w.set(x, y, z, y > 14 ? (y % 3 === 0 ? B.CLAY : B.REDSAND) : B.SANDSTONE);
+        for (let y = 18; y < w.H; y++) w.set(x, y, z, B.AIR);
+      }
+      for (let i = 0; i < 13; i++) for (let x = 58; x <= 62; x++) {
+        const z = 23 + i, top = Math.max(6, 17 - i);
+        for (let y = 1; y <= top; y++) w.set(x, y, z, y === top ? B.SANDSTONE : B.SAND);
+        for (let y = top + 1; y < w.H; y++) w.set(x, y, z, B.AIR);
+      }
+      // pyramide au sommet, chambre funéraire et portail
+      for (let lv = 0; lv < 7; lv++) { const r = 6 - lv; w.fill(60 - r, 18 + lv, 12 - r, 60 + r, 18 + lv, 12 + r, lv === 6 ? B.GLOW : lv % 2 ? B.SANDSTONE : B.CHISELED); }
+      w.fill(57, 18, 9, 63, 20, 15, B.AIR);
+      w.fill(59, 18, 16, 61, 19, 18, B.AIR);
+      for (const [x, z] of [[57, 9], [63, 9], [57, 15], [63, 15]]) { w.set(x, 18, z, B.CHISELED); w.set(x, 19, z, B.CHISELED); w.set(x, 20, z, B.GLOW); }
+      portalPad(w, 60, 17, 11);
       flatten(w, 40, 40, 14, 6, B.SAND, B.SANDSTONE);
       for (let lvl = 0; lvl < 6; lvl++) { const r = 7 - lvl; w.fill(40 - r, 7 + lvl, 40 - r, 40 + r, 7 + lvl, 40 + r, lvl % 2 ? B.SANDSTONE : B.STONEBRICK); }
       w.set(40, 13, 40, B.GLOW);
@@ -315,14 +435,16 @@ G.Maps = (function () {
       for (let dx = -1; dx <= 0; dx++) for (let y = 2; y <= 3; y++) w.set(tx + dx, y, tz - 4 - 1 + 1, B.AIR);
       for (let dx = -1; dx <= 0; dx++) { w.set(tx + dx, 2, tz - 5, B.AIR); w.set(tx + dx, 3, tz - 5, B.AIR); w.set(tx + dx, 1, tz - 5, B.SANDSTONE); }
       // cactus et buissons morts
-      for (let i = 0; i < 60; i++) {
+      portalPad(w, 16, 1, 61);
+      for (let i = 0; i < 70; i++) {
         const x = 3 + Math.floor(rnd() * 74), z = 3 + Math.floor(rnd() * 74);
         if (Math.hypot(x - 40, z - 40) < 16) continue;
         const t = w.top(x, z);
-        if (w.get(x, t, z) !== B.SAND || w.get(x, t + 1, z)) continue;
-        const hh = 1 + Math.floor(rnd() * 3);
-        for (let y = t + 1; y <= t + hh; y++) w.set(x, y, z, B.CACTUS);
+        if (w.get(x, t, z) !== B.SAND || w.get(x, t + 1, z) || w.get(x + 1, t + 1, z) || w.get(x - 1, t + 1, z)) continue;
+        if (rnd() < 0.8) cactus(w, x, t, z, rnd); else deadTree(w, x, t, z, rnd, B.LOG);
       }
+      covers(w, rnd, 18, { avoid: [[40, 40, 9], [60, 12, 13], [16, 60, 7]], surfaces: [B.SAND], kinds: ['sand', 'wall', 'crates'], wall: B.SANDSTONE });
+      pebbles(w, rnd, [B.SAND, B.REDSAND, B.CLAY], 200, 'sandstone_side');
       decorate(w, rnd, B.SAND, [[B.DEADBUSH, 0.025]]);
       decorate(w, rnd, B.GRASS, [[B.TALLGRASS, 0.3], [B.FLOWER_Y, 0.04]]);
     },
@@ -340,7 +462,11 @@ G.Maps = (function () {
       { type: 'perk', perk: 'mainleste', x: 34, z: 51, wave: 5 },
       { type: 'perk', perk: 'bandouliere', x: 18, z: 62, wave: 7 },
       { type: 'forge', x: 41, z: 40, wave: 8 },
+      { type: 'bench', x: 31, z: 37 },
+      { type: 'bench', x: 14, z: 63 },
+      { type: 'wall', weapon: 'magnum', x: 58, z: 10, price: 1800 },
     ],
+    portals: [[[60, 18, 11], [16, 2, 61]]],
   });
 
   // ---------- 3. Toundra ----------
@@ -383,7 +509,10 @@ G.Maps = (function () {
         const x = 3 + Math.floor(rnd() * 74), z = 3 + Math.floor(rnd() * 74);
         if (Math.hypot(x - 40, z - 40) < 18) continue;
         const t = w.top(x, z);
-        if (canTree(w, x, z, t, B.SNOW)) pine(w, x, t, z, rnd);
+        if (!canTree(w, x, z, t, B.SNOW)) continue;
+        const r = rnd();
+        if (r < 0.75) { pine(w, x, t, z, rnd); for (let y = t + 2; y < w.H - 1; y++) if (w.get(x, y, z) === B.PINE && !w.get(x, y + 1, z) && rnd() < 0.5) w.set(x, y + 1, z, B.SNOW); }
+        else if (r < 0.9) birch(w, x, t, z, rnd); else deadTree(w, x, t, z, rnd);
       }
       for (let i = 0; i < 24; i++) {
         const x = 3 + Math.floor(rnd() * 74), z = 3 + Math.floor(rnd() * 74);
@@ -391,6 +520,8 @@ G.Maps = (function () {
         const t = w.top(x, z); if (w.get(x, t, z) !== B.SNOW) continue;
         w.set(x, t + 1, z, B.STONE); if (rnd() < 0.5) w.set(x + 1, t + 1, z, B.MOSSY);
       }
+      covers(w, rnd, 16, { avoid: [[40, 40, 8], [64, 62, 6], [12, 54, 5]], surfaces: [B.SNOW], kinds: ['sand', 'crates', 'rock'] });
+      pebbles(w, rnd, [B.SNOW], 160);
       decorate(w, rnd, B.SNOW, [[B.DEADBUSH, 0.01]]);
     },
     player: [38, 39],
@@ -407,6 +538,8 @@ G.Maps = (function () {
       { type: 'perk', perk: 'foulee', x: 36, z: 45, wave: 4 },
       { type: 'perk', perk: 'bandouliere', x: 12, z: 54, wave: 7 },
       { type: 'forge', x: 43, z: 41, wave: 8 },
+      { type: 'bench', x: 35, z: 35 },
+      { type: 'bench', x: 11, z: 53 },
     ],
   });
 
@@ -470,6 +603,9 @@ G.Maps = (function () {
         if (rnd() < 0.4) w.set(x, t + hh + 1, z, B.GLOW);
       }
       for (let i = 0; i < 40; i++) { const x = Math.floor(rnd() * 80), z = Math.floor(rnd() * 80); const t = w.top(x, z); if (t >= 6 && w.get(x, t, z) !== B.LAVA) w.set(x, t, z, B.MAGMA); }
+      for (let i = 0; i < 25; i++) { const x = 3 + Math.floor(rnd() * 74), z = 3 + Math.floor(rnd() * 74); if (Math.hypot(x - 40, z - 40) < 15) continue; const t = w.top(x, z); if ((w.get(x, t, z) === B.BASALT || w.get(x, t, z) === B.REDSAND) && !w.get(x, t + 1, z)) deadTree(w, x, t, z, rnd, B.OBSIDIAN); }
+      covers(w, rnd, 18, { avoid: [[40, 40, 9], [12, 40, 6], [68, 40, 11]], surfaces: [B.BASALT, B.REDSAND, B.MAGMA], kinds: ['wall', 'rock', 'wall'], wall: B.DARKBRICK });
+      pebbles(w, rnd, [B.BASALT, B.REDSAND], 200, 'basalt');
       decorate(w, rnd, B.REDSAND, [[B.DEADBUSH, 0.04]]);
     },
     player: [40, 37],
@@ -486,6 +622,8 @@ G.Maps = (function () {
       { type: 'perk', perk: 'foulee', x: 40, z: 29, wave: 4 },
       { type: 'perk', perk: 'bandouliere', x: 68, z: 42, wave: 7 },
       { type: 'forge', x: 37, z: 40, wave: 8 },
+      { type: 'bench', x: 45, z: 35 },
+      { type: 'bench', x: 10, z: 41 },
     ],
   });
 
@@ -572,7 +710,10 @@ G.Maps = (function () {
         if (onRoad(a)) continue;
         for (const [x, z] of [[c - 4, a], [a, c + 4]]) { if (w.get(x, g + 1, z)) continue; w.set(x, g + 1, z, B.METAL); w.set(x, g + 2, z, B.METAL); w.set(x, g + 3, z, B.GLOW); }
       }
-      decorate(w, rnd, B.GRASS, [[B.TALLGRASS, 0.15], [B.FLOWER_R, 0.03], [B.FLOWER_Y, 0.03]]);
+      // barrières de chantier et sacs de sable sur les routes et trottoirs
+      covers(w, rnd, 26, { avoid: [[48, 48, 4]], surfaces: [B.ASPHALT, B.ASPHALT_LINE, B.SIDEWALK, B.CONCRETE], kinds: ['barrier', 'sand', 'barrier', 'crates'] });
+      pebbles(w, rnd, [B.ASPHALT, B.SIDEWALK, B.CONCRETE, B.GRASS], 180, 'concrete_dark');
+      decorate(w, rnd, B.GRASS, [[B.TALLGRASS, 0.15], [B.FLOWER_R, 0.02], [B.FLOWER_Y, 0.02]]);
     },
     player: [48, 48],
     stations: [
@@ -588,6 +729,8 @@ G.Maps = (function () {
       { type: 'perk', perk: 'foulee', x: 36, z: 43, wave: 4 },
       { type: 'perk', perk: 'bandouliere', x: 34, z: 38, wave: 7, top: true },
       { type: 'forge', x: 49, z: 30, wave: 8 },
+      { type: 'bench', x: 34, z: 57 },
+      { type: 'bench', x: 39, z: 31 },
     ],
     spawnsFn(S) {
       const s = [];
@@ -638,7 +781,7 @@ G.Maps = (function () {
     const raw = def.spawnsFn ? def.spawnsFn(S) : edgeSpawns(S, 3, 6);
     const spawns = [];
     for (const [x, z] of raw) { const y = w.standAt(x, z); if (y < 999 && w.nodeNear(x + 0.5, y, z + 0.5) >= 0) spawns.push([x, y, z]); }
-    return { def, world: w, playerSpawn: new THREE.Vector3(px + 0.5, py, pz + 0.5), spawns };
+    return { def, world: w, playerSpawn: new THREE.Vector3(px + 0.5, py, pz + 0.5), spawns, portals: def.portals || [] };
   }
 
   return { list, create };

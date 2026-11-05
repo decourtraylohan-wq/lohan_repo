@@ -6,6 +6,7 @@ G.B = {
   FLOWER_R: 30, FLOWER_Y: 31, TALLGRASS: 32, WHEAT: 33, DEADBUSH: 34, FARMLAND: 35, PATH: 36,
   ASPHALT: 37, ASPHALT_LINE: 38, SIDEWALK: 39, CONCRETE: 40, CONCRETE_DARK: 41, GLASS: 42, SEWER: 43, ROOF: 44, GRATE: 45,
   CAR_RED: 46, CAR_BLUE: 47, CAR_WHITE: 48, AWNING: 49, WHITEWALL: 50, TIRE: 51, BOOKSHELF: 52, SNOWGRASS: 53, CLAY: 54,
+  BIRCH: 55, BIRCH_LEAVES: 56, DARK_LOG: 57, DARK_LEAVES: 58, AUTUMN_LEAVES: 59, SANDBAG: 60, CHISELED: 61, PORTAL: 62, BUSH: 63, MUD: 64, ROCK: 65,
 };
 
 G.BLOCKS = (function () {
@@ -67,6 +68,17 @@ G.BLOCKS = (function () {
   def(B.BOOKSHELF, 'planks', 'bookshelf', 'planks');
   def(B.SNOWGRASS, 'snowgrass', 'snow_side', 'dirt');
   def(B.CLAY, 'clay');
+  def(B.BIRCH, 'birch_top', 'birch_side', 'birch_top');
+  def(B.BIRCH_LEAVES, 'birch_leaves', null, null, { opaque: false, bulletPass: true });
+  def(B.DARK_LOG, 'log_top', 'dark_log', 'log_top');
+  def(B.DARK_LEAVES, 'dark_leaves', null, null, { opaque: false, bulletPass: true });
+  def(B.AUTUMN_LEAVES, 'autumn_leaves', null, null, { opaque: false, bulletPass: true });
+  def(B.SANDBAG, 'sandbag');
+  def(B.CHISELED, 'chiseled');
+  def(B.PORTAL, 'portal', null, null, { bright: true });
+  def(B.BUSH, 'bush', null, null, { opaque: false, bulletPass: true });
+  def(B.MUD, 'mud');
+  def(B.ROCK, 'rock');
   return d;
 })();
 
@@ -76,6 +88,9 @@ G.World = class {
     this.data = new Uint8Array(W * H * D);
     this.stand = new Int16Array(W * D);
     this.meshes = [];
+    this.details = [];  // petits éléments décoratifs (cailloux…) sans collision
+    this.solids = [];   // obstacles construits (barricades, boucliers)
+    this.liquidMats = [];
   }
   idx(x, y, z) { return (y * this.D + z) * this.W + x; }
   inside(x, y, z) { return x >= 0 && y >= 0 && z >= 0 && x < this.W && y < this.H && z < this.D; }
@@ -111,7 +126,7 @@ G.World = class {
       { n: [0, 0, -1], t: 'side', v: [[1, 0, 0], [0, 0, 0], [0, 1, 0], [1, 1, 0]] },
     ];
     const AO = [0.4, 0.6, 0.8, 1.0];
-    const groups = { opaque: this._newGroup(), bright: this._newGroup(), water: this._newGroup() };
+    const groups = { opaque: this._newGroup(), bright: this._newGroup(), water: this._newGroup(), lava: this._newGroup() };
     const occ = (x, y, z) => { const b = this.get(x, y, z); return b !== 0 && G.BLOCKS[b].opaque ? 1 : 0; };
     const uvCache = {};
     const getUV = (name) => uvCache[name] || (uvCache[name] = G.Tex.uv(name));
@@ -122,7 +137,7 @@ G.World = class {
       if (!b) continue;
       const def = G.BLOCKS[b];
       if (def.plant) { this._plant(groups.opaque, x, y, z, getUV(def.top), rnd); continue; }
-      const grp = def.liquid ? (def.bright ? groups.bright : groups.water) : (def.bright ? groups.bright : groups.opaque);
+      const grp = def.liquid ? (def.bright ? groups.lava : groups.water) : (def.bright ? groups.bright : groups.opaque);
       for (let f = 0; f < 6; f++) {
         const F = FACES[f];
         const nx = x + F.n[0], ny = y + F.n[1], nz = z + F.n[2];
@@ -152,13 +167,17 @@ G.World = class {
         }
         const base = grp.pos.length / 3;
         const liquidTopDrop = def.liquid ? 0.12 : 0;
+        const surface = def.liquid && !(this.get(x, y + 1, z) && G.BLOCKS[this.get(x, y + 1, z)].liquid);
         for (let i = 0; i < 4; i++) {
           const c = F.v[i];
           let vy = y + c[1];
-          if (liquidTopDrop && c[1] === 1 && !(this.get(x, y + 1, z) && G.BLOCKS[this.get(x, y + 1, z)].liquid)) vy -= liquidTopDrop;
+          if (liquidTopDrop && c[1] === 1 && surface) vy -= liquidTopDrop;
           grp.pos.push(x + c[0], vy, z + c[2]);
           grp.nor.push(F.n[0], F.n[1], F.n[2]);
-          grp.uv.push(uvs[i][0], uvs[i][1]);
+          if (def.liquid) {
+            if (F.n[1] !== 0) grp.uv.push(x + c[0], z + c[2]); else grp.uv.push(x + c[0] + z + c[2], vy);
+            grp.wave.push(c[1] === 1 && surface ? 1 : 0);
+          } else grp.uv.push(uvs[i][0], uvs[i][1]);
           const l = AO[aos[i]];
           grp.col.push(l, l, l);
         }
@@ -167,6 +186,8 @@ G.World = class {
       }
     }
 
+    // détails décoratifs (boîtes sans collision)
+    for (const d of this.details) this._box(groups.opaque, d, getUV(d.tile));
     const mk = (g, mat, cast) => {
       if (!g.idx.length) return;
       const geo = new THREE.BufferGeometry();
@@ -174,6 +195,7 @@ G.World = class {
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.nor, 3));
       geo.setAttribute('uv', new THREE.Float32BufferAttribute(g.uv, 2));
       geo.setAttribute('color', new THREE.Float32BufferAttribute(g.col, 3));
+      if (g.wave.length) geo.setAttribute('wave', new THREE.Float32BufferAttribute(g.wave, 1));
       geo.setIndex(g.idx);
       geo.computeBoundingSphere();
       const m = new THREE.Mesh(geo, mat);
@@ -185,8 +207,26 @@ G.World = class {
     };
     mk(groups.opaque, new THREE.MeshLambertMaterial({ map: G.Tex.atlas, vertexColors: true, alphaTest: 0.5, side: THREE.FrontSide }), true);
     mk(groups.bright, new THREE.MeshBasicMaterial({ map: G.Tex.atlas, vertexColors: true }), false);
-    const wm = mk(groups.water, new THREE.MeshLambertMaterial({ map: G.Tex.atlas, vertexColors: true, transparent: true, opacity: 0.72, depthWrite: false }), false);
-    if (wm) wm.renderOrder = 2;
+    // liquides animés (vagues + texture qui défile)
+    const waveShader = (mat) => {
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uTime = { value: 0 };
+        sh.vertexShader = 'attribute float wave;\nuniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+          'vec3 transformed = vec3(position);\ntransformed.y += wave * (sin(position.x * 1.7 + uTime * 1.5) * 0.045 + cos(position.z * 1.3 + uTime * 1.1) * 0.045 - 0.04);');
+        mat.userData.shader = sh;
+      };
+      this.liquidMats.push(mat);
+      return mat;
+    };
+    if (groups.water.idx.length) {
+      this.waterTex = G.Tex.liquidTex('water');
+      const wm = mk(groups.water, waveShader(new THREE.MeshPhongMaterial({ map: this.waterTex, transparent: true, opacity: 0.8, shininess: 90, specular: 0x6a7a88, depthWrite: false })), false);
+      wm.renderOrder = 2;
+    }
+    if (groups.lava.idx.length) {
+      this.lavaTex = G.Tex.liquidTex('lava');
+      mk(groups.lava, waveShader(new THREE.MeshBasicMaterial({ map: this.lavaTex })), false);
+    }
   }
   _plant(g, x, y, z, uvr, rnd) {
     const [u0, v0, u1, v1] = uvr;
@@ -208,7 +248,28 @@ G.World = class {
       }
     }
   }
-  _newGroup() { return { pos: [], nor: [], uv: [], col: [], idx: [] }; }
+  _newGroup() { return { pos: [], nor: [], uv: [], col: [], idx: [], wave: [] }; }
+  animate(t) {
+    if (this.waterTex) { this.waterTex.offset.x = t * 0.03; this.waterTex.offset.y = t * 0.017; }
+    if (this.lavaTex) { this.lavaTex.offset.x = t * 0.012; this.lavaTex.offset.y = Math.sin(t * 0.2) * 0.05; }
+    for (const m of this.liquidMats) if (m.userData.shader) m.userData.shader.uniforms.uTime.value = t;
+  }
+  _box(g, d, uvr) {
+    const [u0, v0, u1, v1] = uvr;
+    const x0 = d.x - d.sx / 2, x1 = d.x + d.sx / 2, y0 = d.y, y1 = d.y + d.sy, z0 = d.z - d.sz / 2, z1 = d.z + d.sz / 2;
+    const F = [
+      [[1, 0, 0], [[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]]], [[-1, 0, 0], [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]]],
+      [[0, 1, 0], [[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]]],
+      [[0, 0, 1], [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]]], [[0, 0, -1], [[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]]],
+    ];
+    const du = (u1 - u0) * 0.4, dv = (v1 - v0) * 0.4;
+    const uv = [[u0, v0], [u0 + du, v0], [u0 + du, v0 + dv], [u0, v0 + dv]];
+    for (const [n, vs] of F) {
+      const base = g.pos.length / 3;
+      for (let i = 0; i < 4; i++) { g.pos.push(vs[i][0], vs[i][1], vs[i][2]); g.nor.push(n[0], n[1], n[2]); g.uv.push(uv[i][0], uv[i][1]); const l = n[1] ? 0.95 : 0.75; g.col.push(l, l, l); }
+      g.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
   dispose(scene) {
     for (const m of this.meshes) { scene.remove(m); m.geometry.dispose(); m.material.dispose(); }
     this.meshes = [];
@@ -237,24 +298,42 @@ G.World = class {
     const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
     const L = Math.hypot(dx, dy, dz);
     if (L < 0.01) return true;
-    return !this.raycast(a.x, a.y, a.z, dx / L, dy / L, dz / L, L);
+    if (this.raycast(a.x, a.y, a.z, dx / L, dy / L, dz / L, L)) return false;
+    if (this.solids.length && this.solidOnRay(a, { x: dx / L, y: dy / L, z: dz / L }, L, (s) => s.opaque)) return false;
+    return true;
   }
 
   // ---------- Collisions AABB ----------
-  collides(px, py, pz, hw, h) {
+  collides(px, py, pz, hw, h, who) {
+    this.lastSolid = null;
     const x0 = Math.floor(px - hw), x1 = Math.floor(px + hw - 1e-6);
     const y0 = Math.floor(py), y1 = Math.floor(py + h - 1e-6);
     const z0 = Math.floor(pz - hw), z1 = Math.floor(pz + hw - 1e-6);
     for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) if (this.isSolid(x, y, z)) return true;
+    for (const s of this.solids) {
+      if (who === 'player' && !s.blocksPlayer) continue;
+      if (who === 'none') continue;
+      if (px + hw > s.min.x && px - hw < s.max.x && py + h > s.min.y && py < s.max.y && pz + hw > s.min.z && pz - hw < s.max.z) { this.lastSolid = s; return true; }
+    }
     return false;
   }
+  // premier obstacle construit touché par un segment
+  solidOnRay(o, d, maxD, filter) {
+    let best = null, bt = maxD;
+    for (const s of this.solids) {
+      if (filter && !filter(s)) continue;
+      const t = G.rayAABB(o, d, s.min.x, s.min.y, s.min.z, s.max.x, s.max.y, s.max.z);
+      if (t !== null && t < bt) { bt = t; best = s; }
+    }
+    return best ? { s: best, t: bt } : null;
+  }
   moveEntity(e, dt, stepUp = true) {
-    const hw = e.w / 2, h = e.h;
+    const hw = e.w / 2, h = e.h, who = e.isPlayer ? 'player' : 'enemy';
     const p = e.pos;
     let ny = p.y + e.vel.y * dt;
     e.onGround = false;
-    if (this.collides(p.x, ny, p.z, hw, h)) {
-      if (e.vel.y < 0) { ny = Math.floor(ny) + 1; e.onGround = true; }
+    if (this.collides(p.x, ny, p.z, hw, h, who)) {
+      if (e.vel.y < 0) { ny = this.lastSolid ? Math.max(p.y, this.lastSolid.max.y) : Math.floor(ny) + 1; e.onGround = true; }
       else { ny = Math.ceil(ny + h) - h - 1; if (ny < p.y) ny = p.y; }
       e.vel.y = 0;
     }
@@ -263,11 +342,12 @@ G.World = class {
       const v = e.vel[ax] * dt;
       if (!v) continue;
       const nx = ax === 'x' ? p.x + v : p.x, nz = ax === 'z' ? p.z + v : p.z;
-      if (!this.collides(nx, p.y, nz, hw, h)) { p[ax] += v; continue; }
-      if (stepUp && e.onGround && !this.collides(nx, p.y + 1.01, nz, hw, h) && !this.collides(p.x, p.y + 1.01, p.z, hw, h)) {
+      if (!this.collides(nx, p.y, nz, hw, h, who)) { p[ax] += v; continue; }
+      const hitSolid = this.lastSolid;
+      if (!hitSolid && stepUp && e.onGround && !this.collides(nx, p.y + 1.01, nz, hw, h, who) && !this.collides(p.x, p.y + 1.01, p.z, hw, h, who)) {
         p.y = Math.floor(p.y) + 1.0; p[ax] += v; e.stepped = true; continue;
       }
-      e.vel[ax] = 0; e.blocked = true;
+      e.vel[ax] = 0; e.blocked = true; if (hitSolid) e.blockedBy = hitSolid;
     }
   }
 

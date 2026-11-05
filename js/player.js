@@ -35,6 +35,11 @@ G.Player = class {
     this.meleeCD = 0; this.meleeT = 0; this.grenades = 2; this.grenadeCD = 0;
     this.recoil = 0; this.bob = 0; this.triggerHeld = false;
     this.lavaT = 0; this.slowT = 0;
+    this.armor = 0; this.maxArmor = 150; this.plates = 1; this.plateT = 0;
+    this.crouch = false; this.crouchHeld = false; this.slideT = 0; this.slideCD = 0; this.slideDir = new THREE.Vector3(); this.exhausted = false;
+    this.h = 1.8; this.eyeCur = this.eyeH; this.roll = 0;
+    this.builds = { barricade: 0, shield: 0 };
+    this.isPlayer = true;
     this.setViewWeapon();
   }
   newSlot(id, up = false) { const s = up ? G.upgradeStats(id) : G.WEAPONS[id]; return { id, up, mag: s.mag, reserve: s.reserve }; }
@@ -77,9 +82,15 @@ G.Player = class {
     this.flash.visible = false;
     // couteau
     const kn = new THREE.Group();
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.06, 0.28), new THREE.MeshLambertMaterial({ color: 0xc8ccd0 }));
-    blade.position.z = -0.18; kn.add(blade);
-    const hilt = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.07, 0.12), new THREE.MeshLambertMaterial({ color: 0x2a2a2a })); kn.add(hilt);
+    const steel = new THREE.MeshPhongMaterial({ color: 0xb8bcc2, shininess: 120, specular: 0xffffff });
+    const kb = (sx, sy, sz, m, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, y, z); kn.add(b); return b; };
+    kb(0.008, 0.035, 0.17, steel, 0, 0.004, -0.15);
+    const tip = kb(0.008, 0.024, 0.04, steel, 0, 0.0, -0.245); tip.rotation.x = 0.35;
+    kb(0.01, 0.006, 0.15, new THREE.MeshPhongMaterial({ color: 0x55585e }), 0, 0.022, -0.14);
+    kb(0.05, 0.014, 0.016, new THREE.MeshPhongMaterial({ color: 0x2a2a2a }), 0, 0, -0.06);
+    kb(0.026, 0.032, 0.1, new THREE.MeshLambertMaterial({ color: 0x3a3226 }), 0, -0.002, 0.0);
+    kb(0.055, 0.065, 0.08, new THREE.MeshLambertMaterial({ color: 0x2a2a2a }), 0, -0.01, 0.01);
+    kb(0.07, 0.07, 0.3, new THREE.MeshLambertMaterial({ color: 0x5a6a48 }), 0.02, -0.05, 0.19);
     kn.visible = false; this.knife = kn; this.vmScene.add(kn);
   }
   setViewWeapon() {
@@ -123,18 +134,45 @@ G.Player = class {
     const inBlock = w.blockAt(this.pos.x, this.pos.y + 0.2, this.pos.z);
     const st = this.wstats;
     const foulee = this.perks.has('foulee');
-    let sprinting = k.ShiftLeft && fwd > 0 && this.ads < 0.3 && this.reloadT <= 0 && (foulee || this.stamina > 0.05);
-    if (sprinting && !foulee) this.stamina = Math.max(0, this.stamina - dt * 0.18);
-    else this.stamina = Math.min(1, this.stamina + dt * 0.25);
+    // endurance : une fois épuisée, il faut récupérer avant de resprinter (évite le sprint saccadé)
+    if (this.stamina <= 0.01) this.exhausted = true;
+    if (this.exhausted && this.stamina > 0.45) this.exhausted = false;
+    const shift = k.ShiftLeft || k.ShiftRight;
+    let sprinting = shift && fwd > 0 && this.ads < 0.3 && this.reloadT <= 0 && this.plateT <= 0 && !this.crouch && (foulee || !this.exhausted);
+    if (sprinting && !foulee && Math.hypot(this.vel.x, this.vel.z) > 1) this.stamina = Math.max(0, this.stamina - dt * 0.16);
+    else if (!sprinting) this.stamina = Math.min(1, this.stamina + dt * 0.22);
+    // accroupi / glissade
+    const crouchKey = !!k.KeyC;
+    this.slideCD -= dt;
+    if (crouchKey && !this.crouchHeld && this.sprinting && this.onGround && this.slideCD <= 0) {
+      this.slideT = 0.8; this.slideCD = 1.2;
+      this.slideDir.set(this.vel.x, 0, this.vel.z).normalize();
+      G.Audio.S.slide();
+    }
+    this.crouchHeld = crouchKey;
+    const wantCrouch = crouchKey || this.slideT > 0;
+    if (wantCrouch) { this.crouch = true; this.h = 1.2; }
+    else if (this.crouch && !w.collides(this.pos.x, this.pos.y, this.pos.z, this.w / 2, 1.8, 'player')) { this.crouch = false; this.h = 1.8; }
     let speed = (sprinting ? 7.0 : 4.6) * st.move * (foulee ? 1.2 : 1);
+    if (this.crouch) speed = 2.4 * st.move;
     speed *= G.lerp(1, 0.55, this.ads);
     if (inBlock === G.B.WATER) speed *= 0.6;
     if (this.slowT > 0) { this.slowT -= dt; speed *= 0.55; }
     this.sprinting = sprinting && wish.lengthSq() > 0;
     const accel = this.onGround ? (feet === G.B.ICE ? 2.5 : 14) : 3;
-    this.vel.x = G.lerp(this.vel.x, wish.x * speed, Math.min(1, accel * dt));
-    this.vel.z = G.lerp(this.vel.z, wish.z * speed, Math.min(1, accel * dt));
-    if (k.Space && this.onGround) { this.vel.y = 8.2; this.onGround = false; }
+    if (this.slideT > 0) {
+      this.slideT -= dt;
+      const sp = G.lerp(4.0, 10.5, Math.max(0, this.slideT / 0.8));
+      const dir = this.slideDir.clone().lerp(wish.lengthSq() > 0 ? wish.clone().normalize() : this.slideDir, 0.15).normalize();
+      this.slideDir.copy(dir);
+      this.vel.x = dir.x * sp; this.vel.z = dir.z * sp;
+      if (this.blocked) this.slideT = 0;
+    } else {
+      this.vel.x = G.lerp(this.vel.x, wish.x * speed, Math.min(1, accel * dt));
+      this.vel.z = G.lerp(this.vel.z, wish.z * speed, Math.min(1, accel * dt));
+    }
+    if (k.Space && this.onGround) { this.vel.y = this.crouch && this.slideT <= 0 ? 6.5 : 8.2; this.onGround = false; if (this.slideT > 0) this.slideT = 0; }
+    this.blocked = false;
     this.vel.y -= 26 * dt; if (this.vel.y < -40) this.vel.y = -40;
     w.moveEntity(this, dt, true);
     if (this.pos.y < -10) { this.pos.copy(game.map.playerSpawn); this.vel.set(0, 0, 0); }
@@ -148,7 +186,8 @@ G.Player = class {
     if (game.time - this.lastHit > game.mods.regenDelay && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + dt * 45);
 
     // caméra
-    const targetY = this.pos.y + this.eyeH;
+    this.eyeCur = G.lerp(this.eyeCur, this.crouch ? 1.05 : this.eyeH, Math.min(1, dt * 12));
+    const targetY = this.pos.y + this.eyeCur;
     this.camY = this.camY < targetY ? G.lerp(this.camY, targetY, Math.min(1, dt * 14)) : targetY;
     if (Math.abs(this.camY - targetY) > 1.2) this.camY = targetY;
     const hsp = Math.hypot(this.vel.x, this.vel.z);
@@ -162,8 +201,9 @@ G.Player = class {
     cam.position.copy(this.eye);
     cam.position.x += game.shakeAmt * (Math.random() - 0.5) * 0.3;
     cam.position.y += game.shakeAmt * (Math.random() - 0.5) * 0.3;
-    cam.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
-    const fov = set.fov * G.lerp(1, st.zoom, this.ads) * (this.sprinting ? 1.06 : 1);
+    this.roll = G.lerp(this.roll, this.slideT > 0 ? 0.08 : 0, Math.min(1, dt * 10));
+    cam.rotation.set(this.pitch, this.yaw, this.roll, 'YXZ');
+    const fov = set.fov * G.lerp(1, st.zoom, this.ads) * (this.sprinting ? 1.05 : 1) * (this.slideT > 0 ? 1.08 : 1);
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = G.lerp(cam.fov, fov, Math.min(1, dt * 14)); cam.updateProjectionMatrix(); }
 
     this.updateWeapon(dt, hsp);
@@ -182,8 +222,13 @@ G.Player = class {
       }
     }
     if (this.meleeT > 0) this.meleeT -= dt;
+    if (this.plateT > 0) {
+      this.plateT -= dt;
+      if (this.plateT <= 0) { this.armor = Math.min(this.maxArmor, this.armor + 50); this.plates--; G.Audio.S.plate(); }
+    }
     const fury = game.power.fury > 0;
-    if (this.mouse.left && this.fireCD <= 0 && this.reloadT <= 0 && this.switchT <= 0 && this.meleeT <= 0 && (st.auto || !this.triggerHeld)) {
+    if (game.buildItem) { if (this.mouse.left && !this.triggerHeld) { game.placeBuild(); this.triggerHeld = true; } if (!this.mouse.left) this.triggerHeld = false; }
+    else if (this.mouse.left && this.plateT <= 0 && this.fireCD <= 0 && this.reloadT <= 0 && this.switchT <= 0 && this.meleeT <= 0 && (st.auto || !this.triggerHeld)) {
       if (s.mag > 0 || fury) {
         const rate = st.rpm * (this.perks.has('rafale') ? 1.35 : 1);
         this.fireCD = 60 / rate;
@@ -214,7 +259,8 @@ G.Player = class {
     this.sway.multiplyScalar(Math.max(0, 1 - dt * 8));
     this.sway.x = G.clamp(this.sway.x, -0.04, 0.04); this.sway.y = G.clamp(this.sway.y, -0.04, 0.04);
     p.x -= this.sway.x * (1 - this.ads * 0.8); p.y += this.sway.y * (1 - this.ads * 0.8);
-    if (this.sprinting) { p.x -= 0.05; p.y -= 0.04; }
+    if (this.sprinting) { p.x += 0.02; p.y -= 0.05; p.z += 0.03; }
+    if (this.plateT > 0 || game.buildItem) p.y -= 0.18;
     let reloadK = 0;
     if (this.reloadT > 0) { const t = 1 - this.reloadT / (st.reload * this.reloadMult()); reloadK = Math.sin(t * Math.PI); p.y -= reloadK * 0.04; p.x -= reloadK * 0.03;
       if (U.mag) { const mt = t < 0.15 ? 0 : t < 0.4 ? (t - 0.15) / 0.25 : t < 0.55 ? 1 : t < 0.8 ? 1 - (t - 0.55) / 0.25 : 0; U.mag.position.copy(U.magBase); U.mag.position.y -= mt * 0.25; U.mag.position.z += mt * 0.05; U.mag.visible = mt < 0.95; }
@@ -228,11 +274,16 @@ G.Player = class {
     this.updateShells(dt);
     if (this.switchT > 0) p.y -= this.switchT * 0.4;
     this.vmRoot.position.copy(p);
-    this.vmRoot.rotation.set(this.recoil * 0.1 + reloadK * 0.35 + this.sway.y * 2, (this.sprinting ? 0.6 : 0) - this.sway.x * 2, (this.sprinting ? 0.25 : 0) + reloadK * 0.5);
+    this.sprintK = G.lerp(this.sprintK || 0, this.sprinting ? 1 : 0, Math.min(1, dt * 10));
+    this.vmRoot.rotation.set(this.recoil * 0.1 + reloadK * 0.35 + this.sway.y * 2 - this.sprintK * 0.45, this.sprintK * 0.35 - this.sway.x * 2, this.sprintK * 0.2 + reloadK * 0.5);
     const scoped = st.scope && this.ads > 0.85;
     this.vmRoot.visible = !scoped && this.meleeT <= 0;
     this.knife.visible = this.meleeT > 0;
-    if (this.knife.visible) { const t = 1 - this.meleeT / 0.35; this.knife.position.set(0.25 - t * 0.35, -0.15, -0.35 - Math.sin(t * Math.PI) * 0.2); this.knife.rotation.set(0, 0.6 - t * 1.4, -0.4); }
+    if (this.knife.visible) {
+      const t = 1 - this.meleeT / 0.4, e = Math.sin(t * Math.PI);
+      this.knife.position.set(0.18 - t * 0.3, -0.12 + e * 0.05, -0.22 - e * 0.12);
+      this.knife.rotation.set(-0.2 + e * 0.3, 0.9 - t * 1.6, -0.9 + t * 0.6);
+    }
     const scope = document.getElementById('scope');
     if (scope) scope.style.display = scoped ? 'block' : 'none';
   }
@@ -253,6 +304,11 @@ G.Player = class {
       if (s.life <= 0) { this.vmScene.remove(s.m); this.shells.splice(i, 1); }
     }
   }
+  usePlate() {
+    if (this.plates <= 0 || this.armor >= this.maxArmor || this.plateT > 0) { if (this.plates <= 0) G.Audio.S.deny(); return; }
+    this.plateT = this.perks.has('mainleste') ? 0.6 : 1.1; this.reloadT = 0;
+    G.Audio.S.reload();
+  }
   reloadMult() { return this.perks.has('mainleste') ? 0.5 : 1; }
   tryReload() {
     const s = this.slot, st = this.wstats;
@@ -268,7 +324,7 @@ G.Player = class {
   cycle(d) { if (this.slots.length > 1) this.switchTo((this.cur + d + this.slots.length) % this.slots.length); }
   melee() {
     if (this.meleeCD > 0) return;
-    this.meleeCD = 0.6; this.meleeT = 0.35; this.reloadT = 0;
+    this.meleeCD = 0.55; this.meleeT = 0.4; this.reloadT = 0;
     G.Audio.S.melee();
     this.game.meleeAttack(this);
   }

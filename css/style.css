@@ -177,3 +177,21 @@ h3.sec { font-family: 'Bungee', sans-serif; font-weight: 400; letter-spacing: 1p
 #reloadhint { color: #f2c443; font-size: 15px; height: 18px; text-shadow: 0 1px 2px #000; }
 #scoreboard { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 24px; width: min(560px, 90vw); }
 #scoreboard h3 { margin: 0 0 10px; font-family: 'Bungee', sans-serif; font-weight: 400; }
+
+/* armure, inventaire, établi, triche */
+#armorbar { display: flex; gap: 3px; margin-bottom: 4px; }
+#armorbar i { flex: 1; height: 7px; background: rgba(0,0,0,0.55); border: 1px solid rgba(0,0,0,0.8); border-radius: 2px; overflow: hidden; }
+#armorbar b { display: block; height: 100%; width: 0; background: linear-gradient(#8ec4ff, #3a7ad8); transition: width .15s; }
+#inv { position: absolute; right: 28px; bottom: 170px; text-align: right; font-size: 14px; text-shadow: 0 1px 2px #000; color: #ddd; line-height: 1.6; }
+#inv .on { color: #40ff80; }
+#craft { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; width: min(460px, 90vw); }
+#craft h3 { margin: 0 0 10px; font-family: 'Bungee', sans-serif; font-weight: 400; color: #e0a040; }
+#craft .it { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 14px; }
+#craft .it small { color: var(--muted); display: block; font-weight: 400; }
+#cheattag { position: absolute; left: 50%; top: 4px; transform: translateX(-50%); color: #ff60ff; font-size: 13px; text-shadow: 0 1px 2px #000; }
+.cheatbox .chk { display: flex; align-items: center; gap: 8px; }
+.cheatbox small { color: var(--muted); }
+#chOpts { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px 16px; margin-top: 12px; }
+#chOpts label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+#chOpts label.chk { flex-direction: row; color: var(--text); }
+#chOpts input[type=number], #chOpts select { background: #1b2027; color: var(--text); border: 1px solid var(--line); padding: 6px 8px; border-radius: 4px; font: inherit; }

@@ -14,12 +14,12 @@ G.ZTYPES = {
 
 // Soldats : arme portée, portée de combat, précision (probabilité de toucher à courte distance)
 G.STYPES = {
-  rifleman: { name: 'Fantassin', hp: 1, speed: 3.0, dmg: 7, size: 1, skin: 0xc89a78, shirt: 0x4a5a3a, pants: 0x3a4030, eye: 0x202020, pts: 80, soldier: true, weapon: 'rifle', range: [6, 28], acc: 0.42, burst: [3, 5], rof: 0.11, mag: 30, reload: 2.4, react: 0.7, sound: 'rifle' },
-  assault: { name: 'Assaillant', hp: 0.85, speed: 4.0, dmg: 5, size: 0.97, skin: 0xa87a58, shirt: 0x3a3a42, pants: 0x2a2a30, eye: 0x202020, pts: 90, soldier: true, weapon: 'smg', range: [2, 14], acc: 0.4, burst: [5, 9], rof: 0.075, mag: 32, reload: 2.0, react: 0.5, sound: 'smg' },
-  breacher: { name: 'Brécheur', hp: 1.4, speed: 3.4, dmg: 4, pellets: 7, size: 1.05, skin: 0xd8a888, shirt: 0x2a2a2a, pants: 0x1a1a1a, eye: 0x202020, pts: 110, soldier: true, weapon: 'shotgun', range: [1, 8], acc: 0.55, burst: [1, 1], rof: 0.9, mag: 6, reload: 2.8, react: 0.45, sound: 'shotgun', helmet: true },
-  sniper: { name: "Tireur d'élite", hp: 0.8, speed: 2.6, dmg: 50, size: 1, skin: 0xc8a078, shirt: 0x6a6a4a, pants: 0x4a4a30, eye: 0x202020, pts: 140, soldier: true, weapon: 'sniper', range: [14, 45], acc: 0.8, burst: [1, 1], rof: 2.6, mag: 5, reload: 3.0, react: 1.8, sound: 'sniper', laser: true },
-  heavy: { name: 'Mitrailleur', hp: 2.6, speed: 1.8, dmg: 6, size: 1.2, skin: 0xb88a68, shirt: 0x3a2a2a, pants: 0x2a2020, eye: 0x202020, pts: 160, soldier: true, weapon: 'lmg', range: [5, 26], acc: 0.32, burst: [8, 16], rof: 0.085, mag: 100, reload: 4.0, react: 0.9, sound: 'lmg', helmet: true, vest: true },
-  grenadier: { name: 'Grenadier', hp: 1.1, speed: 2.8, dmg: 6, size: 1, skin: 0xc09070, shirt: 0x5a4a2a, pants: 0x3a3020, eye: 0x202020, pts: 120, soldier: true, weapon: 'pistol', range: [7, 22], acc: 0.35, burst: [2, 3], rof: 0.3, mag: 12, reload: 1.8, react: 0.6, sound: 'pistol', grenades: true },
+  rifleman: { role: 'rifle', name: 'Fantassin', hp: 1, speed: 3.0, dmg: 7, size: 1, skin: 0xc89a78, shirt: 0x4a5a3a, pants: 0x3a4030, eye: 0x202020, pts: 80, soldier: true, weapon: 'rifle', range: [6, 28], acc: 0.42, burst: [3, 5], rof: 0.11, mag: 30, reload: 2.4, react: 0.7, sound: 'rifle' },
+  assault: { role: 'rush', name: 'Assaillant', hp: 0.85, speed: 4.0, dmg: 5, size: 0.97, skin: 0xa87a58, shirt: 0x3a3a42, pants: 0x2a2a30, eye: 0x202020, pts: 90, soldier: true, weapon: 'smg', range: [2, 14], acc: 0.4, burst: [5, 9], rof: 0.075, mag: 32, reload: 2.0, react: 0.5, sound: 'smg' },
+  breacher: { role: 'rush', name: 'Brécheur', hp: 1.4, speed: 3.4, dmg: 4, pellets: 7, size: 1.05, skin: 0xd8a888, shirt: 0x2a2a2a, pants: 0x1a1a1a, eye: 0x202020, pts: 110, soldier: true, weapon: 'shotgun', range: [1, 8], acc: 0.55, burst: [1, 1], rof: 0.9, mag: 6, reload: 2.8, react: 0.45, sound: 'shotgun', helmet: true },
+  sniper: { role: 'sniper', name: "Tireur d'élite", hp: 0.8, speed: 2.6, dmg: 50, size: 1, skin: 0xc8a078, shirt: 0x6a6a4a, pants: 0x4a4a30, eye: 0x202020, pts: 140, soldier: true, weapon: 'sniper', range: [14, 45], acc: 0.8, burst: [1, 1], rof: 2.6, mag: 5, reload: 3.0, react: 1.8, sound: 'sniper', laser: true },
+  heavy: { role: 'rifle', name: 'Mitrailleur', hp: 2.6, speed: 1.8, dmg: 6, size: 1.2, skin: 0xb88a68, shirt: 0x3a2a2a, pants: 0x2a2020, eye: 0x202020, pts: 160, soldier: true, weapon: 'lmg', range: [5, 26], acc: 0.32, burst: [8, 16], rof: 0.085, mag: 100, reload: 4.0, react: 0.9, sound: 'lmg', helmet: true, vest: true },
+  grenadier: { role: 'rifle', name: 'Grenadier', hp: 1.1, speed: 2.8, dmg: 6, size: 1, skin: 0xc09070, shirt: 0x5a4a2a, pants: 0x3a3020, eye: 0x202020, pts: 120, soldier: true, weapon: 'pistol', range: [7, 22], acc: 0.35, burst: [2, 3], rof: 0.3, mag: 12, reload: 1.8, react: 0.6, sound: 'pistol', grenades: true },
 };
 
 G.BOSSES = [
@@ -118,31 +118,32 @@ G.Enemy = class {
       this.legL = part(0.22, legH, 0.22, mPants, -0.12, legH, 0, g, -legH / 2);
       this.legR = part(0.22, legH, 0.22, mPants, 0.12, legH, 0, g, -legH / 2);
       if (T.floating) { this.legL.visible = false; this.legR.visible = false; part(0.6, 0.9, 0.4, mPants, 0, 0.55, 0); }
-      this.body = part(bodyW, 0.75, bodyD, mShirt, 0, legH + 0.375, 0);
+      const U = new THREE.Group(); g.add(U); this.upper = U; this.legH = legH;
+      this.body = part(bodyW, 0.75, bodyD, mShirt, 0, legH + 0.375, 0, U);
       const armL = tall ? 1.05 : 0.72;
-      this.armL = part(0.2, armL, 0.2, this.soldier ? mShirt : mSkin, -(bodyW / 2 + 0.1), legH + 0.7, 0, g, -armL / 2 + 0.06);
-      this.armR = part(0.2, armL, 0.2, this.soldier ? mShirt : mSkin, bodyW / 2 + 0.1, legH + 0.7, 0, g, -armL / 2 + 0.06);
+      this.armL = part(0.2, armL, 0.2, this.soldier ? mShirt : mSkin, -(bodyW / 2 + 0.1), legH + 0.7, 0, U, -armL / 2 + 0.06);
+      this.armR = part(0.2, armL, 0.2, this.soldier ? mShirt : mSkin, bodyW / 2 + 0.1, legH + 0.7, 0, U, -armL / 2 + 0.06);
       this.head = new THREE.Mesh(new THREE.BoxGeometry(0.5, tall ? 0.6 : 0.5, 0.5), headMats);
-      this.head.position.set(0, legH + 1.0, 0); g.add(this.head);
+      this.head.position.set(0, legH + 1.0, 0); U.add(this.head);
       if (tall) { part(0.3, 0.12, 0.05, extraMat(0x101010), 0, -0.14, 0.26, this.head); }
       if (T.armor) {
         const mMetal = extraMat(0x8a9096);
         this.helmetMesh = part(0.56, 0.22, 0.56, mMetal, 0, 0.2, 0, this.head);
-        part(0.56, 0.5, 0.36, mMetal, 0, 1.18, 0);
+        part(0.56, 0.5, 0.36, mMetal, 0, 1.18, 0, U);
       }
       if (this.soldier) {
         if (T.helmet) this.helmetMesh = part(0.58, 0.22, 0.58, extraMat(T.vest ? 0x2a2c2e : 0x4a5a3a), 0, 0.3, 0, this.head);
         if (T.beret) part(0.56, 0.1, 0.56, extraMat(0x8a1a1a), 0.03, 0.28, 0, this.head);
-        if (T.vest) part(0.58, 0.55, 0.4, extraMat(0x2a2c2e), 0, legH + 0.4, 0);
-        else part(0.54, 0.4, 0.36, extraMat(0x3a3a2a), 0, legH + 0.45, 0);
+        if (T.vest) part(0.58, 0.55, 0.4, extraMat(0x2a2c2e), 0, legH + 0.4, 0, U);
+        else part(0.54, 0.4, 0.36, extraMat(0x3a3a2a), 0, legH + 0.45, 0, U);
         if (T.laser || this.elite) part(0.44, 0.08, 0.04, extraMat(this.elite ? 0xff2020 : 0x103040), 0, 0.03, 0.26, this.head);
         // arme tenue à deux mains
         const wid = T.weapon === 'flamer' ? 'lmg' : T.weapon;
         const gun = G.makeWeaponModel(wid, false, true);
         gun.rotation.y = Math.PI; gun.scale.setScalar(1.1);
         gun.position.set(0.12, legH + 0.62, 0.42);
-        if (T.weapon === 'flamer') { const tank = part(0.3, 0.5, 0.2, extraMat(0xb04010), 0, legH + 0.45, -0.28); tank.name = 'tank'; }
-        g.add(gun); this.gun = gun;
+        if (T.weapon === 'flamer') { const tank = part(0.3, 0.5, 0.2, extraMat(0xb04010), 0, legH + 0.45, -0.28, U); tank.name = 'tank'; }
+        U.add(gun); this.gun = gun;
       }
       this.armBase = -Math.PI / 2;
     }
@@ -192,6 +193,7 @@ G.Enemy = class {
     if (this.shape === 'crawler') { bw = 0.45 * s; bh = 0.5 * s; }
     else if (this.shape === 'quad') { bw = 0.55 * s; bh = 1.0 * s; }
     else if (this.shape === 'tall') bh = 1.75 * s;
+    if (this.crouching) bh = 1.05 * s;
     const tBody = G.rayAABB(o, d, p.x - bw, p.y, p.z - bw, p.x + bw, p.y + bh, p.z + bw);
     let best = null;
     if (tHead !== null && tHead <= maxD) best = { t: tHead, part: 'head' };
@@ -211,7 +213,7 @@ G.Enemy = class {
     if (this.state === 'stunned') dmg *= 2;
     this.hp -= dmg;
     this.flash = 0.09;
-    if (this.soldier && this.state !== 'engage') this.aimT = Math.max(this.aimT, 0.2); // riposte
+    if (this.soldier) { this.hitAt = this.game.time; this.aimT = Math.max(this.aimT, 0.25); }
     if (this.hp <= 0) this.die(src, part);
     return dmg;
   }
@@ -251,13 +253,13 @@ G.Enemy = class {
 
     let custom = false;
     if (this.isBoss && !this.soldier) { speed = this.bossLogic(dt, dist, dy, toP, moveDir); }
-    else if (this.soldier) { speed = this.soldierLogic(dt, dist, dy, toP, moveDir); custom = this.state === 'engage' || this.state === 'reload' || this.state === 'cast'; }
+    else if (this.soldier) { this.navMode = 'flow'; speed = this.soldierLogic(dt, dist, dy, toP, moveDir); custom = this.navMode === 'none'; }
     else if (this.T.ranged) speed = this.spitterLogic(dt, dist, toP, moveDir);
     else if (this.shape === 'quad') speed = this.stalkerLogic(dt, dist, dy, toP, speed);
     else if (this.shape === 'tall') speed = this.screamerLogic(dt, dist, speed);
 
     const frozen = ['stunned', 'slam', 'windup', 'charge', 'cast', 'scream', 'pounce'].includes(this.state);
-    if (moveDir.lengthSq() === 0 && !frozen && !custom) {
+    if (moveDir.lengthSq() === 0 && !frozen && !custom && this.navMode !== 'none') {
       const direct = dist < 2.5 || (dist < 7 && Math.abs(dy) < 1.2 && w.lineOfSight(new THREE.Vector3(this.pos.x, this.pos.y + 1.2, this.pos.z), pl.eye));
       if (direct || this.T.floating) moveDir.copy(toP).normalize();
       else {
@@ -309,7 +311,12 @@ G.Enemy = class {
       if (this.vel.y < -30) this.vel.y = -30;
       this.blocked = false;
       w.moveEntity(this, dt, true);
-      if (this.blocked && this.onGround && this.state !== 'charge' && this.state !== 'engage') this.vel.y = 7.5;
+      if (this.blocked && this.blockedBy && !this.blockedBy.dead) {
+        // une barricade bloque le passage : on la frappe
+        if (this.atkT <= 0) { this.atkT = this.isBoss ? 1.0 : 1.1; this.lastAtk = game.time; game.damageBuild(this.blockedBy, this.isBoss ? this.dmg * 3 : this.soldier ? 40 : this.dmg * 1.5); }
+        attacking = true;
+      } else if (this.blocked && this.onGround && this.state !== 'charge' && this.state !== 'engage') this.vel.y = 7.5;
+      this.blockedBy = null;
     }
 
     const fb = w.blockAt(this.pos.x, this.pos.y + 0.1, this.pos.z);
@@ -325,7 +332,7 @@ G.Enemy = class {
     }
 
     // orientation + animation
-    const face = this.state === 'charge' ? this.chargeDir : (this.soldier && this.los) || dist < 6 || moveDir.lengthSq() < 0.01 ? toP : moveDir;
+    const face = this.state === 'charge' ? this.chargeDir : this.state === 'tocover' && moveDir.lengthSq() > 0.01 ? moveDir : (this.soldier && this.los) || dist < 6 || moveDir.lengthSq() < 0.01 ? toP : moveDir;
     if (face && face.lengthSq() > 0.001) {
       const target = Math.atan2(face.x, face.z);
       let diff = target - this.mesh.rotation.y;
@@ -352,6 +359,12 @@ G.Enemy = class {
       }
     }
     if (this.gun && this.soldier) this.gun.rotation.x = this.state === 'reload' ? 0.6 : 0;
+    if (this.upper) {
+      const c = this.crouchK = G.lerp(this.crouchK || 0, this.crouching ? 1 : 0, Math.min(1, dt * 10));
+      this.upper.position.y = -0.48 * c;
+      if (c > 0.05 && this.legL) { this.legL.position.y = this.legH - 0.48 * c; this.legR.position.y = this.legH - 0.48 * c; this.legL.rotation.x = -1.3 * c; this.legR.rotation.x = -0.6 * c; }
+      else if (this.legL) { this.legL.position.y = this.legR.position.y = this.legH; }
+    }
     this.mesh.position.copy(this.pos);
     if (this.state === 'windup') this.mesh.position.x += Math.sin(this.anim * 60) * 0.05;
     this.mesh.updateMatrixWorld(true);
@@ -420,49 +433,167 @@ G.Enemy = class {
   // ---------- soldats ----------
   soldierLogic(dt, dist, dy, toP, moveDir) {
     const game = this.game, pl = game.player, w = game.world, T = this.T;
-    const eye = new THREE.Vector3(this.pos.x, this.pos.y + 1.55 * Math.min(this.size, 1.3), this.pos.z);
+    const k = Math.min(this.size, 1.3);
     this.losT -= dt;
-    if (this.losT <= 0) { this.losT = 0.2; this.los = w.lineOfSight(eye, pl.eye); }
+    if (this.losT <= 0) {
+      this.losT = 0.18 + Math.random() * 0.1;
+      this.los = w.lineOfSight(new THREE.Vector3(this.pos.x, this.pos.y + 1.55 * k, this.pos.z), pl.eye);
+      this.hiddenLow = !w.lineOfSight(new THREE.Vector3(this.pos.x, this.pos.y + 0.95 * k, this.pos.z), pl.eye);
+      if (this.los) this.lastSeen = game.time;
+    }
     const range = this.isBoss ? (T.id === 'pyro' ? [1, 7] : T.id === 'juggernaut' ? [3, 24] : [6, 26]) : T.range;
-    this.shotT -= dt; this.grenT -= dt;
+    this.shotT -= dt; this.grenT -= dt; this.stateT -= dt; this.searchT = (this.searchT || 0) - dt;
+    this.crouching = false;
     if (this.isBoss) { const r = this.soldierBoss(dt, dist, range); if (r !== undefined) return r; }
+    if (this.laser && !(this.state === 'peek' || this.state === 'engage')) this.updateLaser(false);
+
+    // grenade pour déloger le joueur caché
+    if ((T.grenades || this.type === 'commandant') && this.grenT <= 0 && dist > 6 && dist < 22 && (this.los || game.time - (this.lastSeen || -99) < 4)) {
+      this.grenT = G.rand(6, 9);
+      const from = new THREE.Vector3(this.pos.x, this.pos.y + 1.6, this.pos.z), t = 1.1;
+      const target = pl.pos.clone().add(pl.vel.clone().multiplyScalar(0.4));
+      game.spawnProjectile('egrenade', from, new THREE.Vector3((target.x - from.x) / t, (target.y - from.y) / t + 0.5 * 20 * t, (target.z - from.z) / t), 45 * game.mods.dmg, this);
+    }
+    // rechargement (accroupi si à couvert)
     if (this.state === 'reload') {
-      if (this.stateT <= game.time) { this.state = 'move'; this.ammo = this.isBoss ? 999 : T.mag; }
-      if (this.los && dist < 10) moveDir.copy(toP).normalize().multiplyScalar(-0.6); // recule pour recharger
-      return this.speed * 0.7;
+      this.crouching = !!this.cover;
+      this.navMode = this.cover ? 'none' : 'flow';
+      if (this.stateT <= 0) { this.ammo = this.isBoss ? 999 : T.mag; this.state = this.cover ? 'cover' : 'move'; this.stateT = G.rand(0.4, 1.0); }
+      return this.cover ? 0 : this.speed * 0.6;
     }
-    // grenades
-    if ((T.grenades || this.type === 'commandant') && this.grenT <= 0 && dist > 6 && dist < 22 && this.los) {
-      this.grenT = G.rand(5, 8);
-      const from = eye.clone();
-      const t = 1.1;
-      const target = pl.pos.clone().add(pl.vel.clone().multiplyScalar(0.5));
-      const vel = new THREE.Vector3((target.x - from.x) / t, (target.y - from.y) / t + 0.5 * 20 * t, (target.z - from.z) / t);
-      game.spawnProjectile('egrenade', from, vel, 45 * game.mods.dmg, this);
+    const role = this.isBoss ? 'rifle' : T.role;
+    if (role === 'rush') return this.engageOrAdvance(dt, dist, toP, moveDir, range, 1.35);
+
+    // --- tireurs : progression d'abri en abri ---
+    if (this.state === 'tocover') {
+      if (!this.cover || this.stateT <= 0) { this.state = 'move'; this.releaseCover(); return this.speed; }
+      const c = this.cover;
+      const dx = c.x - this.pos.x, dz = c.z - this.pos.z;
+      if (Math.hypot(dx, dz) < 0.45 && Math.abs(c.y - this.pos.y) < 1.2) { this.state = 'cover'; this.stateT = G.rand(0.8, 2.0); this.peeks = 0; this.navMode = 'none'; return 0; }
+      this.navMode = 'none';
+      const nxt = this.nextLocal();
+      if (nxt) moveDir.set(nxt[0] + 0.5 - this.pos.x, 0, nxt[2] + 0.5 - this.pos.z).normalize(); else moveDir.set(dx, 0, dz).normalize();
+      // tir de couverture pendant la course (mitrailleurs)
+      if (T.id === 'heavy' && this.los && dist < range[1]) this.tryFire(dt, dist, 0.6);
+      return this.speed * 1.5;
     }
+    if (this.state === 'cover' || this.state === 'peek') {
+      this.navMode = 'none';
+      const compromised = this.state === 'cover' && !this.hiddenLow && this.losT < 0.05;
+      if (compromised || dist < range[0] - 1 || dist > range[1] + 8) { this.releaseCover(); this.state = 'move'; this.searchT = 0; return this.speed; }
+      if (this.state === 'cover') {
+        this.crouching = true;
+        if (this.ammo < (T.mag || 30) * 0.35) { this.state = 'reload'; this.stateT = T.reload; G.Audio.S.reload(this.pos); return 0; }
+        if (this.stateT <= 0) { this.state = 'peek'; this.stateT = T.laser ? G.rand(2.6, 3.6) : G.rand(1.4, 2.6); this.aimT = 0; this.peeks = (this.peeks || 0) + 1; }
+        return 0;
+      }
+      // peek : on se relève et on tire
+      const recentlyHit = game.time - (this.hitAt || -9) < 0.3;
+      if (this.los) { this.tryFire(dt, dist, 1); if (this.laser) this.updateLaser(true); }
+      else if (this.laser) this.updateLaser(false);
+      if (this.stateT <= 0 || recentlyHit || (!this.los && this.stateT < 0.8)) {
+        if (this.laser) this.updateLaser(false);
+        // de temps en temps, on avance vers un abri plus proche
+        if (this.peeks >= 2 && Math.random() < 0.45 && dist > (range[0] + range[1]) / 2 || !this.los && Math.random() < 0.5) { this.releaseCover(); this.state = 'move'; this.searchT = 0; this.advance = true; return this.speed; }
+        this.state = 'cover'; this.stateT = G.rand(0.8, 2.2);
+      }
+      return 0;
+    }
+    // --- move : recherche d'abri, sinon progression en tirant ---
+    this.state = 'move';
+    if (this.searchT <= 0 && this.los && dist < range[1] + 4) {
+      this.searchT = G.rand(0.8, 1.4);
+      const c = this.findCover(range, this.advance);
+      this.advance = false;
+      if (c) { this.cover = c; c.owner = this; this.state = 'tocover'; this.stateT = 8; this.buildLocalPath(c.id); this.navMode = 'none'; return this.speed * 1.5; }
+    }
+    // pas d'abri : cohésion d'escouade puis combat à découvert
+    if (this.squad && this.squad.leader !== this && !this.squad.leader.dead && this.pos.distanceTo(this.squad.leader.pos) > 7 && !this.los) {
+      moveDir.set(this.squad.leader.pos.x - this.pos.x, 0, this.squad.leader.pos.z - this.pos.z).normalize(); this.navMode = 'none';
+      return this.speed * 1.3;
+    }
+    return this.engageOrAdvance(dt, dist, toP, moveDir, range, 1.25);
+  }
+  // combat à découvert (assaillants, ou tireurs sans abri)
+  engageOrAdvance(dt, dist, toP, moveDir, range, runMul) {
     if (this.los && dist <= range[1]) {
       this.state = 'engage';
-      this.aimT += dt;
-      // déplacement tactique
+      this.navMode = 'none';
       if (dist < range[0]) moveDir.copy(toP).normalize().multiplyScalar(-1);
-      else if (range[0] <= 2 && dist > 3) moveDir.copy(toP).normalize(); // fonce
-      else { const side = new THREE.Vector3(-toP.z, 0, toP.x).normalize(); if (Math.random() < dt * 0.4) this.strafeDir *= -1; moveDir.copy(side).multiplyScalar(this.strafeDir * 0.45); }
+      else if (range[0] <= 2 && dist > 3) moveDir.copy(toP).normalize();
+      else { const side = new THREE.Vector3(-toP.z, 0, toP.x).normalize(); if (Math.random() < dt * 0.5) this.strafeDir *= -1; moveDir.copy(side).multiplyScalar(this.strafeDir * 0.5); }
+      // les assaillants s'accroupissent parfois pour tirer
+      if (this.T.role !== 'rush' && Math.random() < dt * 0.3) this.kneelT = G.rand(1, 2);
+      if (this.kneelT > 0) { this.kneelT -= dt; this.crouching = true; moveDir.set(0, 0, 0); }
+      this.tryFire(dt, dist, 1);
       if (this.laser) this.updateLaser(true);
-      const react = T.react * (this.elite ? 0.7 : 1);
-      if (this.aimT > react && this.shotT <= 0) {
-        if (this.burstLeft <= 0) this.burstLeft = G.randInt(T.burst[0], T.burst[1]);
-        this.fireAt(dist);
-        this.burstLeft--; this.ammo--;
-        this.shotT = this.burstLeft > 0 ? T.rof : T.rof + G.rand(0.5, 1.2);
-        if (T.laser) this.aimT = 0;
-        if (this.ammo <= 0) { this.state = 'reload'; this.stateT = game.time + T.reload; this.burstLeft = 0; G.Audio.S.reload(this.pos); }
-      }
-      return T.laser && this.aimT > 0.3 ? 0 : this.speed * 0.55;
+      return this.T.laser && this.aimT > 0.3 ? 0 : this.speed * (this.crouching ? 0 : 0.6);
     }
-    if (this.laser) this.updateLaser(false);
     this.aimT = Math.max(0, this.aimT - dt * 2);
-    this.state = 'move';
-    return this.speed;
+    this.state = this.state === 'engage' ? 'move' : this.state;
+    this.navMode = 'flow';
+    return this.speed * (dist > 10 ? runMul : 1);
+  }
+  tryFire(dt, dist, accMul) {
+    const T = this.T;
+    this.aimT += dt;
+    const react = (T.react || 0.6) * (this.elite ? 0.7 : 1);
+    if (this.aimT > react && this.shotT <= 0 && this.ammo > 0) {
+      if (this.burstLeft <= 0) this.burstLeft = G.randInt(T.burst ? T.burst[0] : 3, T.burst ? T.burst[1] : 5);
+      this.fireAt(dist, accMul);
+      this.burstLeft--; this.ammo--;
+      this.shotT = this.burstLeft > 0 ? (T.rof || 0.12) : (T.rof || 0.12) + G.rand(0.5, 1.2);
+      if (T.laser) this.aimT = 0;
+      if (this.ammo <= 0) { this.state = 'reload'; this.stateT = T.reload || 2.5; this.burstLeft = 0; G.Audio.S.reload(this.pos); }
+    }
+  }
+  releaseCover() { if (this.cover && this.cover.owner === this) this.cover.owner = null; this.cover = null; this.localPath = null; }
+  // cherche une case où l'on est caché accroupi mais d'où l'on peut tirer debout
+  findCover(range, advance) {
+    const game = this.game, w = game.world, n = w.nav, pl = game.player;
+    if (!n) return null;
+    const lead = this.squad && this.squad.leader !== this && !this.squad.leader.dead ? this.squad.leader : null;
+    const ctr = lead && lead.cover ? lead.cover : lead ? lead.pos : this.pos;
+    const cy = Math.floor(this.pos.y), ideal = (range[0] + range[1]) / 2;
+    const curD = Math.hypot(this.pos.x - pl.pos.x, this.pos.z - pl.pos.z);
+    let best = null, bs = -1e9;
+    const R = 9;
+    for (let i = 0; i < 60; i++) {
+      const x = Math.floor(ctr.x) + G.randInt(-R, R), z = Math.floor(ctr.z) + G.randInt(-R, R);
+      if (x < 1 || z < 1 || x >= w.W - 1 || z >= w.D - 1) continue;
+      let id = -1, yy;
+      for (yy = Math.min(w.H - 2, cy + 3); yy >= Math.max(1, cy - 5); yy--) { id = n.nodeAt[w.idx(x, yy, z)]; if (id >= 0) break; }
+      if (id < 0 || n.dist[id] < 0) continue;
+      const px = x + 0.5, pz = z + 0.5;
+      const dP = Math.hypot(px - pl.pos.x, pz - pl.pos.z);
+      if (dP < range[0] || dP > range[1]) continue;
+      if (advance && dP > curD - 2) continue;
+      if (game.enemies.some((o) => o !== this && o.cover && o.cover.owner === o && Math.hypot(o.cover.x - px, o.cover.z - pz) < 1.5)) continue;
+      if (w.lineOfSight(new THREE.Vector3(px, yy + 0.95, pz), pl.eye)) continue; // doit cacher le soldat accroupi
+      const peek = w.lineOfSight(new THREE.Vector3(px, yy + 1.6, pz), pl.eye);
+      if (!peek) continue; // un abri d'où l'on ne peut pas tirer ne sert à rien
+      const sc = 6 - Math.abs(dP - ideal) * 0.25 - Math.hypot(px - this.pos.x, pz - this.pos.z) * 0.3 + Math.random();
+      if (sc > bs) { bs = sc; best = { x: px, y: yy, z: pz, id, peek }; }
+    }
+    return best;
+  }
+  buildLocalPath(target) {
+    const n = this.game.world.nav, dist = new Map([[target, 0]]), q = [target];
+    for (let qi = 0; qi < q.length && q.length < 900; qi++) {
+      const c = q[qi], d = dist.get(c);
+      if (d > 26) continue;
+      for (let k = n.inStart[c]; k < n.inStart[c + 1]; k++) { const a = n.inList[k]; if (!dist.has(a)) { dist.set(a, d + 1); q.push(a); } }
+    }
+    this.localPath = dist;
+  }
+  nextLocal() {
+    const w = this.game.world, n = w.nav, map = this.localPath;
+    if (!map) return null;
+    const id = w.nodeNear(this.pos.x, this.pos.y, this.pos.z);
+    if (id < 0 || !map.has(id)) return null;
+    let best = -1, bd = map.get(id);
+    for (let k = n.outStart[id]; k < n.outStart[id + 1]; k++) { const t = n.outList[k]; const d = map.get(t); if (d !== undefined && d < bd) { bd = d; best = t; } }
+    return best < 0 ? null : [n.nx[best], n.ny[best], n.nz[best]];
   }
   updateLaser(on) {
     this.laser.visible = on;
@@ -481,6 +612,7 @@ G.Enemy = class {
     const pv = Math.hypot(pl.vel.x, pl.vel.z);
     if (pv > 5) acc *= 0.6; else if (pv > 2) acc *= 0.8;
     if (!pl.onGround) acc *= 0.7;
+    if (pl.crouch) acc *= 0.7;
     let hits = 0;
     for (let i = 0; i < pellets; i++) if (Math.random() < acc) hits++;
     game.enemyShot(this, from, hits, hits * this.dmg * dmgMul, T.sound || 'rifle');
@@ -490,16 +622,16 @@ G.Enemy = class {
     this.abilityT -= dt;
     if (T.id === 'juggernaut') {
       if (this.state === 'spin') {
-        if (game.time > this.stateT) { this.state = 'fire'; this.stateT = game.time + 3.2; }
+        if (game.time > this.bossT) { this.state = 'fire'; this.bossT = game.time + 3.2; }
         return 0;
       }
       if (this.state === 'fire') {
         if (this.shotT <= 0 && this.los) { this.shotT = 0.07; this.fireAt(dist, 0.75); }
-        if (game.time > this.stateT) { this.state = 'move'; this.abilityT = G.rand(1.5, 2.5); }
+        if (game.time > this.bossT) { this.state = 'move'; this.abilityT = G.rand(1.5, 2.5); }
         return this.speed * 0.4;
       }
-      if (this.los && dist < range[1] && this.abilityT <= 0) { this.state = 'spin'; this.stateT = game.time + 1.0; G.Audio.S.spinup(this.pos); return 0; }
-      this.state = 'move';
+      if (this.los && dist < range[1] && this.abilityT <= 0) { this.state = 'spin'; this.bossT = game.time + 1.0; G.Audio.S.spinup(this.pos); return 0; }
+      this.state = 'move'; this.navMode = 'flow';
       return this.speed;
     }
     if (T.id === 'pyro') {

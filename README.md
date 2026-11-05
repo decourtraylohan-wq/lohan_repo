@@ -34,6 +34,16 @@ puis va sur http://localhost:8000.
   - léger shader de post-traitement (étalonnage des couleurs par carte, vignettage, grain, distorsion au cri de la Hurleuse) ;
   - occlusion ambiante, végétation (herbes hautes, fleurs, blé).
 - **Sons synthétisés** : détonations en plusieurs couches, réverbération, sons spatialisés (gauche/droite et distance), sifflement des balles qui vous ratent, ambiance par carte, battements de cœur quand la vie est basse.
+- **Déplacements** : sprint, glissade (C pendant un sprint), accroupi (C maintenu, plus précis et plus dur à toucher), couteau avec fente et coup fatal dans le dos (V ou clic molette).
+- **Armure** : 3 plaques de 50 qui absorbent 75 % des dégâts (touche X pour en mettre une).
+- **Constructions** : à fabriquer avec des points aux établis ⚒ placés dans les maisons, puis à poser avec B et un clic.
+  - barricade de sacs de sable : abri bas derrière lequel s'accroupir ;
+  - bouclier énergétique : arrête les balles ennemies mais laisse passer les vôtres.
+
+  Chacune a une durabilité ; les zombies la frappent et les soldats tirent dessus.
+- **Soldats plus tactiques** : ils cherchent un abri d'où ils peuvent tirer, s'y accroupissent, se relèvent pour tirer, rechargent à couvert, courent d'abri en abri, se déplacent en escouades et lancent des grenades pour vous déloger.
+- **Mode triche**, à cocher avant de lancer : vague de départ, points, armes, atouts, invincibilité, munitions infinies. En jeu, K passe la vague et L donne +10 000 points. Ces parties ne sont pas enregistrées.
+- **Désert** : une pyramide au sommet du canyon abrite un portail qui mène au tombeau souterrain (et inversement).
 - **Mode Classé** : 7 rangs, de Bronze à Légende. La difficulté augmente avec le rang.
 - **Statistiques** : carrière, record par carte et par type de partie, historique et détail vague par vague. Tout est sauvegardé dans le navigateur.
 
@@ -43,12 +53,15 @@ puis va sur http://localhost:8000.
 |---|---|
 | ZQSD / WASD | Se déplacer |
 | Maj | Sprinter |
+| C | S'accroupir ; glissade en sprintant |
+| X | Plaque d'armure |
+| B | Mode construction |
 | Espace | Sauter |
 | Clic gauche / droit | Tirer / viser |
 | R | Recharger |
 | 1 2 3 / molette | Changer d'arme |
 | E | Acheter / interagir |
-| V | Couteau |
+| V / clic molette | Couteau |
 | G | Grenade |
 | N | Lancer la vague suivante |
 | Tab | Stats de la partie |

@@ -142,7 +142,8 @@ G.UI = (function () {
     }
     h += '</div><p class="hint">Forge ★ (dès la vague 8, 5000 pts) : dégâts ×2, chargeur ×1,5, réserve ×1,6.</p>';
     h += '<h3 class="sec">Atouts</h3><div class="cards">' + Object.values(G.PERKS).map((p) => '<div class="card"><h4 style="color:#' + p.color.toString(16).padStart(6, '0') + '">' + p.icon + ' ' + p.name + '</h4><div class="sub">' + p.price + ' pts</div>' + p.desc + '</div>').join('') + '</div>';
-    h += '<h3 class="sec">Bonus</h3><div class="cards">' + Object.values(G.POWERUPS).map((p) => '<div class="card"><h4 style="color:#' + p.color.toString(16).padStart(6, '0') + '">' + p.icon + ' ' + p.name + '</h4><div class="sub">' + ({ 'MUNITIONS MAX': 'Recharge toutes les armes et grenades', 'MORT INSTANTANÉE': 'Tout tue en un coup (20 s)', 'POINTS ×2': 'Points doublés (20 s)', 'BOMBE': 'Élimine tous les zombies (hors boss)', 'FUREUR': 'Munitions infinies sans recharger (15 s)', 'BUTIN': '+500 points' }[p.name]) + '</div></div>').join('') + '</div>';
+    h += '<h3 class="sec">Établi ⚒</h3><div class="cards">' + G.CRAFT.map((c) => '<div class="card"><h4>' + c.name + '</h4><div class="sub">' + c.price + ' pts — max ' + c.max + '</div>' + c.desc + '</div>').join('') + '</div>';
+    h += '<h3 class="sec">Bonus</h3><div class="cards">' + Object.values(G.POWERUPS).map((p) => '<div class="card"><h4 style="color:#' + p.color.toString(16).padStart(6, '0') + '">' + p.icon + ' ' + p.name + '</h4><div class="sub">' + ({ 'MUNITIONS MAX': 'Recharge toutes les armes et grenades', 'MORT INSTANTANÉE': 'Tout tue en un coup (20 s)', 'POINTS ×2': 'Points doublés (20 s)', 'BOMBE': 'Élimine tous les zombies (hors boss)', 'FUREUR': 'Munitions infinies sans recharger (15 s)', 'BUTIN': '+500 points', "PLAQUE D'ARMURE": '+50 armure et +1 plaque' }[p.name]) + '</div></div>').join('') + '</div>';
     const ZD = { crawler: 'Rampe au sol : petite cible, difficile à toucher. Vague 4+.', stalker: 'Créature à quatre pattes qui bondit sur vous. Vague 7+.', screamer: 'Son cri vous ralentit, brouille la vue et enrage les zombies proches. Vague 9+.', walker: 'Lent au début, il accélère au fil des vagues.', runner: 'Rapide et fragile. Vague 3+.', brute: 'Énorme réservoir de PV, frappe fort. Vague 6+.', bloater: 'Explose au contact ou à sa mort. Vague 8+.', spitter: 'Garde ses distances et crache de l\'acide. Vague 11+.', armored: 'Casque qui absorbe les tirs à la tête.', minion: 'Invoqué par le Nécromancien.' };
     h += '<h3 class="sec">Bestiaire</h3><div class="cards">' + Object.entries(G.ZTYPES).map(([k, z]) => '<div class="card"><h4>' + z.name + '</h4><div class="sub">PV ×' + z.hp + ' — vitesse ' + z.speed + '</div>' + ZD[k] + '</div>').join('') + '</div>';
     const BD = { colosse: 'Vagues 5, 20, 35… Frappe le sol : sautez pour éviter l\'onde de choc !', necro: 'Vagues 10, 25, 40… Invoque des squelettes, se téléporte et lance des orbes.', belier: 'Vagues 15, 30, 45… Charge en ligne droite. Faites-le percuter un mur pour l\'étourdir (dégâts ×2).' };
@@ -178,20 +179,21 @@ G.UI = (function () {
       [run.wave, 'Vague atteinte'], [run.kills, 'Éliminations'], [run.headshots, 'Tirs à la tête'], [acc + ' %', 'Précision'],
       [run.points, 'Points gagnés'], [G.fmtTime(run.time), 'Temps survécu'], [run.bosses, 'Boss vaincus'], [run.dmgTaken, 'Dégâts subis'],
     ].map(([v, l]) => '<div class="stat"><b>' + v + '</b><small>' + l + '</small></div>').join('') + '</div>';
-    if (run.mode === 'ranked') {
+    if (res.cheat) h += '<div class="panel" style="margin:0;color:#ff80ff">Partie en mode triche : rien n\'est enregistré.</div>';
+    else if (run.mode === 'ranked') {
       const a = res.infoAfter;
       h += '<div class="panel" style="margin:0"><div class="rankedrow">' + emblem(a, 64) + '<div style="flex:1"><div class="rankname" style="color:' + a.color + '">' + a.label + '</div><div class="rp">' + res.before + ' → ' + res.after + ' RP (objectif vague ' + R.expectedWave(res.infoBefore.t) + ')</div><div class="bar"><div id="overBar" style="width:' + Math.round(res.infoBefore.progress * 100) + '%;background:' + a.color + '"></div></div></div>' +
         '<div class="rpchange ' + (res.delta >= 0 ? 'pos' : 'neg') + '">' + (res.delta > 0 ? '+' : '') + res.delta + ' RP</div></div>' +
         (res.promoted ? '<div class="promo" style="background:' + a.color + ';color:#111;margin-top:12px">PROMOTION : ' + a.label.toUpperCase() + '</div>' : '') +
         (res.demoted ? '<div class="promo" style="background:#3a1a1a;color:#ff8080;margin-top:12px">RÉTROGRADATION : ' + a.label.toUpperCase() + '</div>' : '') + '</div>';
     }
-    h += '<div style="color:var(--muted);margin-top:8px">+' + res.xpGain + ' XP' + (res.levelUp ? ' — <b style="color:var(--accent2)">NIVEAU ' + R.level().lvl + ' !</b>' : '') + '</div>';
+    if (!res.cheat) h += '<div style="color:var(--muted);margin-top:8px">+' + res.xpGain + ' XP' + (res.levelUp ? ' — <b style="color:var(--accent2)">NIVEAU ' + R.level().lvl + ' !</b>' : '') + '</div>';
     h += '<div class="btnrow"><button class="big" id="btnAgain">Rejouer</button><button id="btnDetail">Détail des vagues</button><button id="btnMenu">Menu principal</button></div>';
     $('overBody').innerHTML = h;
     $('scr-over').classList.remove('hidden');
     if (res.promoted) G.Audio.S.rankUp();
     setTimeout(() => { const b = $('overBar'); if (b) b.style.width = Math.round(res.infoAfter.progress * 100) + '%'; }, 200);
-    $('btnAgain').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.start(run.map, run.mode, run.gameType || 'zombies'); });
+    $('btnAgain').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.start(run.map, run.mode, run.gameType || 'zombies', res.cheat ? G.game.lastCheats : null); });
     $('btnDetail').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.quitToMenu(); go('stats'); });
     $('btnMenu').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.quitToMenu(); go('main'); });
   }
@@ -204,7 +206,7 @@ G.UI = (function () {
   function updateHUD(d) {
     setText('points', d.points.toLocaleString('fr-FR'));
     setText('wave', d.wave || '');
-    setText('left', d.left ? d.left + ' zombie' + (d.left > 1 ? 's' : '') : '');
+    setText('left', d.left ? d.left + (G.game.gameType === 'soldats' ? ' ennemi' : ' zombie') + (d.left > 1 ? 's' : '') : '');
     const hpP = Math.max(0, d.hp / d.maxHp);
     $('hpbar').style.width = (hpP * 100).toFixed(1) + '%';
     $('hpbar').style.background = hpP < 0.35 ? 'linear-gradient(#ff6a5a,#b0150a)' : '';
@@ -215,7 +217,14 @@ G.UI = (function () {
     setText('mag', d.mag);
     setText('reserve', '/ ' + d.reserve);
     $('ammo').classList.toggle('low', typeof d.mag === 'number' && d.mag <= 3);
-    setText('grenades', '💣 × ' + d.grenades);
+    setText('grenades', '💣 × ' + d.grenades + '   ⛨ × ' + d.plates);
+    const segs = $('armorbar').children;
+    for (let i = 0; i < 3; i++) segs[i].firstChild.style.width = (G.clamp((d.armor - i * 50) / 50, 0, 1) * 100).toFixed(0) + '%';
+    setHTML('inv', (d.plateT > 0 ? '<div class="on">Plaque en cours…</div>' : '') + (d.crouch ? '<div>Accroupi</div>' : '') +
+      '<div class="' + (d.buildItem === 'barricade' ? 'on' : '') + '">🧱 Barricade × ' + d.builds.barricade + '</div>' +
+      '<div class="' + (d.buildItem === 'shield' ? 'on' : '') + '">🛡 Bouclier × ' + d.builds.shield + '</div>' +
+      (d.buildItem ? '<div class="on">[Clic] poser — [B] changer</div>' : '<div style="opacity:.6">[B] construire · [X] plaque</div>'));
+    $('cheattag').classList.toggle('hidden', !d.cheats);
     setText('reloadhint', d.reloading ? 'Rechargement…' : (typeof d.mag === 'number' && d.mag === 0 && d.reserve === 0 ? 'Plus de munitions !' : (typeof d.mag === 'number' && d.mag <= 3 ? '[R] Recharger' : '')));
     setHTML('slots', d.slots.map((s, i) => '<span class="' + (s.cur ? 'cur' : '') + '">' + (i + 1) + ' · ' + G.esc(s.name) + '</span>').join(''));
     setHTML('perks', d.perks.map((p) => { const P = G.PERKS[p]; return '<span title="' + P.name + '" style="color:#' + P.color.toString(16).padStart(6, '0') + '">' + P.icon + '</span>'; }).join(''));
@@ -260,6 +269,12 @@ G.UI = (function () {
     $('msg').style.opacity = 1;
     clearTimeout(msgTimer); msgTimer = setTimeout(() => { $('msg').style.opacity = 0; }, dur * 1000);
   }
+  function showCraft(on) {
+    const c = $('craft');
+    if (!on) { c.classList.add('hidden'); return; }
+    c.innerHTML = '<h3>⚒ Établi</h3>' + G.CRAFT.map((it, i) => '<div class="it"><div><kbd>' + (i + 1) + '</kbd> ' + it.name + '<small>' + it.desc + ' — max ' + it.max + '</small></div><div style="color:#f2c443">' + it.price + '</div></div>').join('') + '<p class="hint" style="margin:8px 0 0">Touches 1 à 4 pour fabriquer, [E] pour fermer.</p>';
+    c.classList.remove('hidden');
+  }
   function showHUD(on) {
     $('hud').classList.toggle('hidden', !on);
     document.querySelectorAll('#menus .screen').forEach((s) => s.classList.add('hidden'));
@@ -284,7 +299,15 @@ G.UI = (function () {
   function init() {
     document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
     document.querySelectorAll('.mode').forEach((b) => b.addEventListener('click', () => { selMode = b.dataset.mode; G.Audio.S.click(); renderPlay(); }));
-    $('btnLaunch').addEventListener('click', () => { G.Audio.init(); G.game.start(selMap, selMode, selType); });
+    // triche
+    const wopts = '<option value="">—</option>' + Object.values(G.WEAPONS).map((w) => '<option value="' + w.id + '">' + w.name + '</option>').join('');
+    ['chW1', 'chW2', 'chW3'].forEach((id, i) => { $(id).innerHTML = wopts; $(id).value = ['rifle', 'sniper', 'ray'][i]; });
+    $('chOn').addEventListener('change', () => $('chOpts').classList.toggle('hidden', !$('chOn').checked));
+    $('btnLaunch').addEventListener('click', () => {
+      G.Audio.init();
+      const cheats = $('chOn').checked ? { on: true, wave: Number($('chWave').value) || 1, points: Number($('chPts').value) || 0, weapons: [$('chW1').value, $('chW2').value, $('chW3').value].filter(Boolean), upgraded: $('chUp').checked, allPerks: $('chPerks').checked, god: $('chGod').checked, ammo: $('chAmmo').checked } : null;
+      G.game.start(selMap, selMode, selType, cheats);
+    });
     document.querySelectorAll('.gtype').forEach((b) => b.addEventListener('click', () => { selType = b.dataset.type; G.Audio.S.click(); renderPlay(); }));
     $('btnResume').addEventListener('click', () => G.game.setPaused(false));
     $('btnAbandon').addEventListener('click', () => { $('scr-pause').classList.add('hidden'); G.game.paused = false; G.game.gameOver(); });
@@ -293,5 +316,5 @@ G.UI = (function () {
     go('main');
   }
 
-  return { init, go, updateHUD, hitmarker, pointsPopup, hurt, damageDir, flash, message, showHUD, showPause, showScoreboard, showGameOver };
+  return { showCraft, init, go, updateHUD, hitmarker, pointsPopup, hurt, damageDir, flash, message, showHUD, showPause, showScoreboard, showGameOver };
 })();

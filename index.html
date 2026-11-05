@@ -29,6 +29,7 @@
     <div id="pops"></div>
     <div id="points">500</div>
     <div id="perks"></div>
+    <div id="armorbar"><i><b></b></i><i><b></b></i><i><b></b></i></div>
     <div class="hpwrap"><div id="hpbar"></div><span id="hptext">100</span></div>
     <div id="stamina"><div></div></div>
   </div>
@@ -39,6 +40,9 @@
     <div id="grenades"></div>
     <div id="reloadhint"></div>
   </div>
+  <div id="inv"></div>
+  <div id="craft" class="hidden"></div>
+  <div id="cheattag" class="hidden">TRICHE — [K] passer la vague · [L] +10 000 pts</div>
   <div id="scoreboard" class="hidden"></div>
 </div>
 
@@ -70,6 +74,20 @@
       <button class="mode" data-mode="ranked"><b>Classé</b><small>Gagnez ou perdez des RP selon vos performances</small></button>
     </div>
     <div id="rankedInfo" class="panel hidden"></div>
+    <div class="panel cheatbox">
+      <label class="chk"><input type="checkbox" id="chOn"> <b>Mode triche</b> <small>(pour tester : la partie n'est pas enregistrée)</small></label>
+      <div id="chOpts" class="hidden">
+        <label>Vague de départ <input type="number" id="chWave" min="1" max="60" value="10"></label>
+        <label>Points <input type="number" id="chPts" min="0" step="1000" value="50000"></label>
+        <label>Arme 1 <select id="chW1"></select></label>
+        <label>Arme 2 <select id="chW2"></select></label>
+        <label>Arme 3 <select id="chW3"></select></label>
+        <label class="chk"><input type="checkbox" id="chUp"> Armes améliorées ★</label>
+        <label class="chk"><input type="checkbox" id="chPerks" checked> Tous les atouts</label>
+        <label class="chk"><input type="checkbox" id="chGod"> Invincible</label>
+        <label class="chk"><input type="checkbox" id="chAmmo" checked> Munitions infinies</label>
+      </div>
+    </div>
     <div id="mapList" class="maps"></div>
     <div class="launch"><button id="btnLaunch" class="big">Lancer la partie</button></div>
   </section>
@@ -100,18 +118,21 @@
     <div class="panel controls">
       <div><kbd>Z Q S D</kbd> / <kbd>W A S D</kbd> Se déplacer</div>
       <div><kbd>Maj</kbd> Sprinter</div>
+      <div><kbd>C</kbd> S'accroupir (maintenir) — <kbd>C</kbd> en sprintant : glissade</div>
+      <div><kbd>X</kbd> Mettre une plaque d'armure</div>
+      <div><kbd>B</kbd> Mode construction (barricade / bouclier), <kbd>Clic gauche</kbd> pour poser</div>
       <div><kbd>Espace</kbd> Sauter</div>
       <div><kbd>Clic gauche</kbd> Tirer</div>
       <div><kbd>Clic droit</kbd> Viser</div>
       <div><kbd>R</kbd> Recharger</div>
       <div><kbd>1 2 3</kbd> / <kbd>Molette</kbd> Changer d'arme</div>
       <div><kbd>E</kbd> Acheter / interagir</div>
-      <div><kbd>V</kbd> Couteau</div>
+      <div><kbd>V</kbd> / <kbd>Clic molette</kbd> Couteau (fente, coup fatal dans le dos)</div>
       <div><kbd>G</kbd> Grenade</div>
       <div><kbd>N</kbd> Lancer la vague suivante</div>
       <div><kbd>Tab</kbd> Statistiques de la partie</div>
       <div><kbd>Échap</kbd> Pause</div>
-      <p class="hint">Gagnez des points en touchant et en tuant des zombies. Dépensez-les aux stations : armes murales (socle doré), caisse mystère (faisceau bleu), atouts (machines colorées, qui s'activent au fil des vagues) et la Forge ★ (vague 8) pour améliorer votre arme. Un boss apparaît toutes les 5 vagues.</p>
+      <p class="hint">Gagnez des points en touchant et en tuant des zombies. Dépensez-les aux stations : armes murales (socle doré), caisse mystère (faisceau bleu), atouts (machines colorées, qui s'activent au fil des vagues) et la Forge ★ (vague 8) pour améliorer votre arme. Un boss apparaît toutes les 5 vagues. Les établis ⚒ (dans les maisons) fabriquent barricades, boucliers, plaques d'armure et grenades. Dans le désert, le portail de la pyramide au sommet du canyon mène au tombeau souterrain.</p>
     </div>
   </section>
 

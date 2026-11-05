@@ -29,11 +29,11 @@ G.Tex = (function () {
     atlasCanvas = document.createElement('canvas');
     atlasCanvas.width = TILE * COLS; atlasCanvas.height = TILE * COLS;
 
-    tile('grass_top', speckle(0x5fa83a, 40));
-    tile('dirt', speckle(0x8a5a35, 36));
+    tile('grass_top', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, t.rnd() < 0.12 ? 0x5e7440 : 0x6d8248, Math.floor((t.rnd() - 0.5) * 26)); });
+    tile('dirt', speckle(0x7a5a3e, 28));
     tile('grass_side', (t) => {
       speckle(0x8a5a35, 36)(t);
-      for (let x = 0; x < 16; x++) { const d = 3 + Math.floor(t.rnd() * 3); for (let y = 0; y < d; y++) t.px(x, y, 0x5fa83a, Math.floor((t.rnd() - 0.5) * 40)); }
+      for (let x = 0; x < 16; x++) { const d = 3 + Math.floor(t.rnd() * 3); for (let y = 0; y < d; y++) t.px(x, y, 0x6d8248, Math.floor((t.rnd() - 0.5) * 26)); }
     });
     tile('stone', (t) => { speckle(0x7d7d7d, 30)(t); for (let i = 0; i < 6; i++) { const x = Math.floor(t.rnd() * 14), y = Math.floor(t.rnd() * 15); t.px(x, y, 0x5e5e5e); t.px(x + 1, y, 0x5e5e5e); } });
     tile('cobble', (t) => {
@@ -58,8 +58,8 @@ G.Tex = (function () {
         t.px(x, y, line || seam ? 0x6e5233 : 0xa98653, Math.floor((t.rnd() - 0.5) * 18));
       }
     });
-    tile('leaves', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { if (t.rnd() < 0.18) t.clear(x, y); else t.px(x, y, 0x3e7d24, Math.floor((t.rnd() - 0.5) * 50)); } });
-    tile('sand', speckle(0xdccf8e, 26));
+    tile('leaves', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { if (t.rnd() < 0.18) t.clear(x, y); else t.px(x, y, 0x4a6534, Math.floor((t.rnd() - 0.5) * 36)); } });
+    tile('sand', speckle(0xcdbf94, 20));
     tile('sandstone_top', speckle(0xd8c88a, 16));
     tile('sandstone_side', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const band = y < 3 ? 10 : y > 12 ? -14 : (y % 5 === 0 ? -10 : 0); t.px(x, y, 0xd2bf7e, band + Math.floor((t.rnd() - 0.5) * 12)); } });
     tile('snow', speckle(0xf2f6fa, 12));
@@ -119,9 +119,9 @@ G.Tex = (function () {
       for (let y = 6; y < 16; y++) t.px(7 + (y % 3 === 0 ? 1 : 0), y, stem, Math.floor((t.rnd() - 0.5) * 20));
       if (head) for (const [x, y] of headRows) t.px(x, y, head, Math.floor((t.rnd() - 0.5) * 30));
     };
-    tile('flower_red', plant(0x3e8a24, 0xd02828, [[6, 3], [7, 3], [8, 3], [6, 4], [7, 4], [8, 4], [7, 2], [7, 5], [5, 4], [9, 4]]));
-    tile('flower_yellow', plant(0x3e8a24, 0xf0d020, [[6, 4], [7, 4], [8, 4], [7, 3], [7, 5], [6, 5], [8, 3]]));
-    tile('tallgrass', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.clear(x, y); for (let i = 0; i < 9; i++) { const x = 1 + Math.floor(t.rnd() * 14), h = 5 + Math.floor(t.rnd() * 10); for (let y = 16 - h; y < 16; y++) t.px(x, y, 0x5aa03a, Math.floor((t.rnd() - 0.5) * 40)); } });
+    tile('flower_red', plant(0x4a6a34, 0xb03a30, [[6, 3], [7, 3], [8, 3], [6, 4], [7, 4], [8, 4], [7, 2], [7, 5], [5, 4], [9, 4]]));
+    tile('flower_yellow', plant(0x4a6a34, 0xd8b840, [[6, 4], [7, 4], [8, 4], [7, 3], [7, 5], [6, 5], [8, 3]]));
+    tile('tallgrass', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.clear(x, y); for (let i = 0; i < 9; i++) { const x = 1 + Math.floor(t.rnd() * 14), h = 5 + Math.floor(t.rnd() * 10); for (let y = 16 - h; y < 16; y++) t.px(x, y, 0x6a8048, Math.floor((t.rnd() - 0.5) * 30)); } });
     tile('wheat', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.clear(x, y); for (let x = 1; x < 16; x += 3) { for (let y = 4; y < 16; y++) t.px(x, y, y < 8 ? 0xd8b040 : 0x9a9a30, Math.floor((t.rnd() - 0.5) * 30)); t.px(x + 1, 5, 0xe0c050); t.px(x - 1 < 0 ? 0 : x - 1, 6, 0xe0c050); } });
     tile('deadbush', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.clear(x, y); for (let i = 0; i < 6; i++) { let x = 8, y = 15; const dx = t.rnd() < 0.5 ? -1 : 1; for (let k = 0; k < 9; k++) { t.px(G.clamp(x, 0, 15), y, 0x7a5a30); y--; if (t.rnd() < 0.5) x += dx; } } });
     tile('farmland', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, y % 4 === 0 ? 0x4a2e18 : 0x6a4426, Math.floor((t.rnd() - 0.5) * 20)); });
@@ -150,6 +150,21 @@ G.Tex = (function () {
     tile('bookshelf', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const shelf = y % 8 === 0 || y % 8 === 7; t.px(x, y, shelf ? 0xa98653 : G.pick([0x8a2020, 0x20508a, 0x2a7a2a, 0x8a7a20, 0x4a2a6a]), shelf ? 0 : -10); } });
     tile('snowgrass', (t) => { speckle(0xe8eef4, 14)(t); for (let i = 0; i < 20; i++) t.px(Math.floor(t.rnd() * 16), Math.floor(t.rnd() * 16), 0x6a8a5a); });
     tile('clay', speckle(0xb06a40, 24));
+
+
+    // --- variété : bouleau, chêne sombre, buissons, sacs de sable, pyramide, portail ---
+    tile('birch_side', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, 0xd8d4c8, Math.floor((t.rnd() - 0.5) * 14)); for (let i = 0; i < 12; i++) { const x = Math.floor(t.rnd() * 14), y = Math.floor(t.rnd() * 16); t.px(x, y, 0x2a2a28); t.px(x + 1, y, 0x2a2a28); } });
+    tile('birch_top', speckle(0xc8b890, 16));
+    tile('birch_leaves', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { if (t.rnd() < 0.2) t.clear(x, y); else t.px(x, y, 0x6a7a40, Math.floor((t.rnd() - 0.5) * 34)); } });
+    tile('dark_leaves', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { if (t.rnd() < 0.15) t.clear(x, y); else t.px(x, y, 0x34482a, Math.floor((t.rnd() - 0.5) * 28)); } });
+    tile('dark_log', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, (x % 3 === 0) ? 0x2a1e14 : 0x3c2c1c, Math.floor((t.rnd() - 0.5) * 16)); });
+    tile('autumn_leaves', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { if (t.rnd() < 0.18) t.clear(x, y); else t.px(x, y, t.rnd() < 0.4 ? 0xa0582a : 0x8a6a2a, Math.floor((t.rnd() - 0.5) * 30)); } });
+    tile('sandbag', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const row = Math.floor(y / 5), off = row % 2 ? 4 : 0; const seam = y % 5 === 4 || (x + off) % 8 === 7; t.px(x, y, seam ? 0x5e553e : 0x958866, seam ? 0 : Math.floor((t.rnd() - 0.5) * 18) + (y % 5 === 0 ? 10 : 0)); } });
+    tile('chiseled', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const e = x === 0 || y === 0 || x === 15 || y === 15 || (x > 4 && x < 11 && (y === 4 || y === 11)) || (y > 4 && y < 11 && (x === 4 || x === 11)); t.px(x, y, e ? 0xa8946a : 0xcbb88a, Math.floor((t.rnd() - 0.5) * 10)); } });
+    tile('portal', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, 0x8a3ad8, Math.floor(Math.sin(x * 0.9 + y * 0.6) * 40 + (t.rnd() - 0.5) * 30)); });
+    tile('rock', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) t.px(x, y, t.rnd() < 0.3 ? 0x6e6a64 : 0x84807a, Math.floor((t.rnd() - 0.5) * 20)); });
+    tile('bush', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { if (t.rnd() < 0.1) t.clear(x, y); else t.px(x, y, t.rnd() < 0.1 ? 0x8a3030 : 0x45603a, Math.floor((t.rnd() - 0.5) * 30)); } });
+    tile('mud', speckle(0x5a4a38, 18));
 
     atlasTexture = new THREE.CanvasTexture(atlasCanvas);
     atlasTexture.magFilter = THREE.NearestFilter;
@@ -198,5 +213,22 @@ G.Tex = (function () {
     });
   }
 
-  return { buildAtlas, uv, get atlas() { return atlasTexture; }, pix, noiseTex, faceTex, rgb };
+  function liquidTex(kind) {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const ctx = c.getContext('2d');
+    const rnd = G.mulberry32(kind === 'water' ? 9 : 19);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const v = Math.sin(x * 0.2 + Math.sin(y * 0.15) * 2) * 0.5 + Math.sin(y * 0.25 + Math.cos(x * 0.1) * 2) * 0.5;
+      let r, g, b;
+      if (kind === 'water') { const k = v * 14 + (rnd() - 0.5) * 6; r = 38 + k * 0.5; g = 74 + k; b = 92 + k * 1.2; if (v > 0.85) { r += 40; g += 45; b += 45; } }
+      else { const k = v * 50 + (rnd() - 0.5) * 20; r = 225 + k * 0.3; g = 90 + k; b = 20 + k * 0.2; if (v < -0.6) { r = 120; g = 30; b = 10; } }
+      ctx.fillStyle = 'rgb(' + G.clamp(r, 0, 255) + ',' + G.clamp(g, 0, 255) + ',' + G.clamp(b, 0, 255) + ')'; ctx.fillRect(x, y, 1, 1);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+    t.encoding = THREE.sRGBEncoding; t.repeat.set(0.25, 0.25);
+    return t;
+  }
+
+  return { liquidTex, buildAtlas, uv, get atlas() { return atlasTexture; }, pix, noiseTex, faceTex, rgb };
 })();
