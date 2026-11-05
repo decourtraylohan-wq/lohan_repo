@@ -21,7 +21,86 @@ G.UI = (function () {
     if (name === 'stats') renderStats();
     if (name === 'arsenal') renderArsenal();
     if (name === 'options') renderOptions();
+    if (name === 'story') renderStory();
+    if (name === 'missions') renderMissions();
   }
+
+  // ---------- Histoire ----------
+  let selChap = null, selMission = null;
+  const starsTxt = (n, max = 3) => '<span class="starsrow">' + '★'.repeat(n) + '<span class="off">' + '★'.repeat(Math.max(0, max - n)) + '</span></span>';
+  function renderStory() {
+    const S = G.STORY, un = G.Story.unlocked(), P = R.profile, done = (P.story && P.story.stars) || {};
+    if (!selChap || selChap > un) selChap = Math.min(un, S.chapters.length);
+    let h = '<div class="panel"><div class="story-hero"><div><h3>' + S.title + '</h3><p>' + S.pitch + '</p></div></div></div>';
+    h += '<div class="chapters">' + S.chapters.map((c) => {
+      const locked = c.n > un, st = done[c.id];
+      return '<button class="chap' + (c.n === selChap ? ' active' : '') + (locked ? ' locked' : '') + '" data-ch="' + c.n + '"><div class="thumb" style="background-image:url(' + thumb(c.map) + ')"></div><div class="info"><div class="num">CHAPITRE ' + c.n + '</div><h4>' + (locked ? '???' : c.title) + '</h4><p>' + (locked ? 'Terminez le chapitre précédent pour débloquer la suite.' : c.brief) + '</p>' +
+        '<div class="meta"><span>' + (G.Maps.list.find((m) => m.id === c.map) || {}).name + ' — ' + (c.type === 'soldats' ? 'Soldats' : 'Zombies') + '</span>' + (st !== undefined ? starsTxt(st) : '') + '</div></div></button>';
+    }).join('') + '</div>';
+    const c = G.Story.chapter(selChap);
+    h += '<div class="launch"><button id="btnStory" class="big">' + (done[c.id] !== undefined ? 'Rejouer' : 'Jouer') + ' : chapitre ' + c.n + ' — ' + c.title + '</button></div>';
+    $('storyBody').innerHTML = h;
+    document.querySelectorAll('.chap').forEach((b) => b.addEventListener('click', () => { const n = Number(b.dataset.ch); if (n > un) { G.Audio.S.deny(); return; } selChap = n; G.Audio.S.click(); renderStory(); }));
+    $('btnStory').addEventListener('click', () => { G.Audio.init(); G.game.startMission(G.Story.chapter(selChap), 'story'); });
+  }
+  function renderMissions() {
+    const P = R.profile, ms = (P.missions && P.missions.stars) || {}, best = (P.missions && P.missions.best) || {};
+    const list = G.MISSIONS;
+    if (!selMission || !G.Story.missionUnlocked(list.find((m) => m.id === selMission))) { const f = list.find((m) => G.Story.missionUnlocked(m)); selMission = f ? f.id : null; }
+    let h = '<div class="panel"><p class="hint" style="margin:0">Des contrats tirés de l\'histoire, rejouables pour décrocher les trois étoiles. Chaque chapitre terminé débloque de nouvelles missions.</p></div>';
+    h += '<div class="chapters">' + list.map((m) => {
+      const ok = G.Story.missionUnlocked(m), ch = G.STORY.chapters.find((c) => c.id === m.after);
+      return '<button class="chap' + (m.id === selMission ? ' active' : '') + (ok ? '' : ' locked') + '" data-m="' + m.id + '"><div class="thumb" style="background-image:url(' + thumb(m.map) + ')"></div><div class="info"><div class="num">' + (m.type === 'soldats' ? 'SOLDATS' : 'ZOMBIES') + (m.limit ? ' — ' + G.fmtTime(m.limit) + ' MAX' : '') + '</div><h4>' + m.title + '</h4><p>' + (ok ? m.brief : 'Débloquée après le chapitre ' + ch.n + ' : ' + ch.title + '.') + '</p>' +
+        '<div class="meta"><span>' + (best[m.id] ? 'Record : ' + G.fmtTime(best[m.id]) : (G.Maps.list.find((x) => x.id === m.map) || {}).name) + '</span>' + starsTxt(ms[m.id] || 0) + '</div></div></button>';
+    }).join('') + '</div>';
+    const m = list.find((x) => x.id === selMission);
+    h += '<div class="launch">' + (m ? '<button id="btnMission" class="big">Lancer : ' + m.title + '</button>' : '<button class="big" disabled>Terminez le chapitre 1 de l\'histoire</button>') + '</div>';
+    $('missionsBody').innerHTML = h;
+    document.querySelectorAll('[data-m]').forEach((b) => b.addEventListener('click', () => { const mm = list.find((x) => x.id === b.dataset.m); if (!G.Story.missionUnlocked(mm)) { G.Audio.S.deny(); return; } selMission = mm.id; G.Audio.S.click(); renderMissions(); }));
+    if (m) $('btnMission').addEventListener('click', () => { G.Audio.init(); G.game.startMission(m, 'mission'); });
+  }
+  function showMissionEnd(r) {
+    const d = r.def, acc = r.shots ? Math.round((r.hits / r.shots) * 100) : 0;
+    const why = r.reason === 'time' ? 'Temps écoulé' : r.reason === 'death' ? 'Vous êtes mort' : 'Mission abandonnée';
+    let h = '<p class="over-title" style="color:' + (r.success ? 'var(--good)' : 'var(--bad)') + '">' + (r.success ? (r.kind === 'story' ? 'CHAPITRE TERMINÉ' : 'MISSION ACCOMPLIE') : 'MISSION ÉCHOUÉE') + '</p>';
+    h += '<div style="color:var(--muted)">' + (r.kind === 'story' ? 'Chapitre ' + d.n + ' — ' : 'Mission — ') + G.esc(d.title) + (r.success ? '' : ' — ' + why) + '</div>';
+    if (r.success) h += '<div class="endstars">' + '★'.repeat(r.stars.n) + '<span class="off">' + '★'.repeat(3 - r.stars.n) + '</span></div><div class="panel" style="margin:0 auto 10px;max-width:460px">' + r.stars.list.map((c) => '<div class="crit"><span>' + c.label + '</span><span class="' + (c.ok ? 'ok' : 'ko') + '">' + (c.ok ? '✔' : '✘') + '</span></div>').join('') + '</div>';
+    h += '<div class="statgrid" style="margin:14px 0">' + [[G.fmtTime(r.time), 'Durée'], [r.kills, 'Éliminations'], [r.headshots, 'Tirs à la tête'], [acc + ' %', 'Précision'], [r.dmgTaken, 'Dégâts subis']].map(([v, l]) => '<div class="stat"><b>' + v + '</b><small>' + l + '</small></div>').join('') + '</div>';
+    const nextCh = r.kind === 'story' && r.success ? G.Story.chapter(d.n + 1) : null;
+    h += '<div class="btnrow">' + (nextCh ? '<button class="big" id="btnNext">Chapitre suivant : ' + nextCh.title + '</button>' : '') + '<button class="' + (nextCh ? '' : 'big') + '" id="btnRetry">' + (r.success ? 'Rejouer' : 'Réessayer') + '</button><button id="btnMenu2">' + (r.kind === 'story' ? 'Chapitres' : 'Missions') + '</button></div>';
+    if (r.kind === 'story' && r.success && !nextCh) h += '<p class="hint" style="margin-top:12px">Fin de l\'histoire… pour l\'instant. Toutes les missions sont débloquées.</p>';
+    $('overBody').innerHTML = h;
+    $('scr-over').classList.remove('hidden');
+    const close = () => $('scr-over').classList.add('hidden');
+    if (nextCh) $('btnNext').addEventListener('click', () => { close(); G.game.startMission(nextCh, 'story'); });
+    $('btnRetry').addEventListener('click', () => { close(); G.game.startMission(d, r.kind); });
+    $('btnMenu2').addEventListener('click', () => { close(); G.game.quitToMenu(); go(r.kind === 'story' ? 'story' : 'missions'); });
+  }
+  // objectif, marqueur à l'écran, sous-titres radio
+  const _v = new THREE.Vector3();
+  function updateObjective(mi, cam) {
+    const ob = $('objective'), mk = $('objmarker'), sb = $('subtitle'), hb = $('holdbar');
+    if (!mi) { ob.classList.add('hidden'); mk.classList.add('hidden'); sb.classList.add('hidden'); hb.classList.add('hidden'); return; }
+    ob.classList.remove('hidden');
+    setText2(ob.children[0], mi.title + (mi.timer ? ' — ⏱ ' + mi.timer : ''));
+    setText2(ob.children[1], mi.label);
+    setText2(ob.children[2], mi.extra || '');
+    if (mi.line) { sb.classList.remove('hidden'); sb.children[0].textContent = mi.line.who + ' :'; sb.children[0].style.color = mi.line.color || ''; sb.children[1].textContent = mi.line.text; } else sb.classList.add('hidden');
+    hb.classList.toggle('hidden', !(mi.hold > 0)); if (mi.hold > 0) hb.firstChild.style.width = Math.round(mi.hold * 100) + '%';
+    if (mi.marker && cam) {
+      _v.copy(mi.marker); _v.y += 1.2; _v.project(cam);
+      const W = window.innerWidth, H = window.innerHeight;
+      let x = (_v.x * 0.5 + 0.5) * W, y = (-_v.y * 0.5 + 0.5) * H;
+      const behind = _v.z > 1, edge = behind || x < 30 || x > W - 30 || y < 30 || y > H - 30;
+      if (behind) { x = W - x; y = H - 40; }
+      x = G.clamp(x, 30, W - 30); y = G.clamp(y, 30, H - 40);
+      mk.classList.remove('hidden'); mk.classList.toggle('edge', edge);
+      mk.style.left = x + 'px'; mk.style.top = y + 'px';
+      const pl = G.game.player, m = mi.markerReal || mi.marker;
+      mk.children[1].textContent = Math.round(Math.hypot(m.x - pl.pos.x, m.y - pl.pos.y, m.z - pl.pos.z)) + ' m';
+    } else mk.classList.add('hidden');
+  }
+  function setText2(el, v) { if (el.textContent !== v) el.textContent = v; }
 
   function emblem(info, size = 78) {
     const letters = { Bronze: 'B', Argent: 'A', Or: 'O', Platine: 'P', Diamant: 'D', 'Maître': 'M', 'Légende': 'L' };
@@ -353,11 +432,11 @@ G.UI = (function () {
     });
     document.querySelectorAll('.gtype').forEach((b) => b.addEventListener('click', () => { selType = b.dataset.type; G.Audio.S.click(); renderPlay(); }));
     $('btnResume').addEventListener('click', () => G.game.setPaused(false));
-    $('btnAbandon').addEventListener('click', () => { $('scr-pause').classList.add('hidden'); G.game.paused = false; G.game.gameOver(); });
+    $('btnAbandon').addEventListener('click', () => { $('scr-pause').classList.add('hidden'); G.game.paused = false; G.game.gameOver('abandon'); });
     bindOptions();
     G.Audio.setVolume(R.profile.settings.vol);
     go('main');
   }
 
-  return { underwater, showCraft, init, go, updateHUD, hitmarker, pointsPopup, hurt, damageDir, flash, message, showHUD, showPause, showScoreboard, showGameOver };
+  return { showMissionEnd, updateObjective, underwater, showCraft, init, go, updateHUD, hitmarker, pointsPopup, hurt, damageDir, flash, message, showHUD, showPause, showScoreboard, showGameOver };
 })();

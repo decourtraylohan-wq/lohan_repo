@@ -330,6 +330,11 @@ G.Maps = (function () {
         else if (e === 1) w.set(x, top + 2, z, B.ZINC);
         else w.set(x, top + 3, z, B.ZINC);
       }
+      // échelle des combles jusqu'au toit (trappe dans le zinc)
+      for (const [x, z] of [[mx, mz], [mx - 1, mz], [mx, mz - 1], [mx + 1, mz + 1], [mx - 2, mz + 1]]) {
+        if (Math.min(x - x0, x1 - x, z - z0, z1 - z) < 3 || nearStair(x, z)) continue;
+        w.set(x, top, z, B.PLANKS); w.setLadder(x, top + 1, top + 3, z, 0); break;
+      }
       for (const [x, z] of [[x0 + 2, mz], [x1 - 2, mz], [mx, z0 + 2], [mx + 1, z1 - 2]]) if (rnd() < 0.8) { w.set(x, top + 4, z, B.BRICK); w.set(x, top + 5, z, B.BRICK); dbox(w, x + 0.3, top + 6, z + 0.3, x + 0.7, top + 6.3, z + 0.7, 'darkbrick'); }
     } else {
       // toit : parapet et climatiseurs
@@ -1511,7 +1516,19 @@ G.Maps = (function () {
         break;
       }
     }
-    return { def, world: w, playerSpawn: new THREE.Vector3(px + 0.5, py, pz + 0.5), spawns, portals: def.portals || [], carSpots: w.carSpots || [], perches };
+    // postes de tir intérieurs : étages, à côté d'une fenêtre à hauteur des yeux (tireurs d'élite « dans les bâtiments »)
+    const windows = [];
+    for (let z = 2; z < S - 2; z++) for (let x = 2; x < S - 2; x++) {
+      const low = w.standAt(x, z); if (low >= 999) continue;
+      for (let y = low + 4; y < w.H - 3; y++) {
+        const id = w.nav.nodeAt[w.idx(x, y, z)];
+        if (id < 0 || w.nav.dist[id] < 0) continue;
+        let roof = false; for (let yy = y + 2; yy <= y + 4; yy++) if (w.isSolid(x, yy, z)) { roof = true; break; }
+        if (!roof) continue;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (w.get(x + dx, y + 1, z + dz) === B.GLASS) { windows.push({ x, y, z, id, win: true }); break; }
+      }
+    }
+    return { def, world: w, playerSpawn: new THREE.Vector3(px + 0.5, py, pz + 0.5), spawns, portals: def.portals || [], carSpots: w.carSpots || [], perches, windows };
   }
 
   return { list, create };

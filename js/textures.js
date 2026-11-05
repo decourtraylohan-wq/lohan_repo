@@ -239,6 +239,8 @@ G.Tex = (function () {
       }
       for (let i = 0; i < 5; i++) t.px(Math.floor(t.rnd() * 16), 14 + Math.floor(t.rnd() * 2), cols[0]);
     };
+    // échelle en bois (fond transparent)
+    tile('ladder', (t) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const rail = x === 2 || x === 3 || x === 12 || x === 13, rung = (y % 4 === 1 || y % 4 === 2) && x > 3 && x < 12; if (rail || rung) t.px(x, y, rail ? 0x6b4c2c : 0x8a6a40, Math.floor((t.rnd() - 0.5) * 14) + (y % 4 === 1 && rung ? 10 : 0)); else t.clear(x, y); } });
     tile('tag1', tag([0x30c0ff, 0xff40a0, 0xf0f0f0], 0));
     tile('tag2', tag([0xffd020, 0x40e060, 0x101010], 2));
     tile('tag3', tag([0xff5020, 0xffffff, 0x8040ff], 4));

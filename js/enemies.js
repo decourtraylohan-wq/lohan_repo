@@ -66,6 +66,7 @@ G.Enemy = class {
     this.atkT = 0.5; this.flash = 0; this.anim = Math.random() * 10;
     this.stuckT = 0; this.lastPos = pos.clone();
     this.groanT = G.rand(2, 8);
+    this.voicePitch = G.rand(0.6, 1.15); this.voiceIdx = Math.floor(Math.random() * 4);
     this.state = 'chase'; this.stateT = 0; this.abilityT = G.rand(3, 6); this.summonT = 10; this.tpT = 14;
     this.fuse = -1; this.buffT = 0;
     // soldats
@@ -225,6 +226,7 @@ G.Enemy = class {
     this.flash = 0.09;
     if (this.soldier) { this.hitAt = this.game.time; this.aimT = Math.max(this.aimT, 0.25); }
     if (this.hp <= 0) this.die(src, part);
+    else if (this.soldier && !this.saidHit && this.hp < this.maxHp * 0.5) { this.saidHit = true; G.Voice.bark(this, 'hit'); }
     return dmg;
   }
 
@@ -232,6 +234,8 @@ G.Enemy = class {
     if (this.dead) return;
     this.dead = true; this.deadT = 0;
     if (this.laser) this.laser.visible = false;
+    G.Audio.S.death(this.pos.clone().add(new THREE.Vector3(0, 1.5, 0)), this.isBoss ? 'boss' : this.soldier ? 'soldier' : 'zombie', this.soldier ? this.voicePitch : 1 / Math.max(0.6, this.size));
+    if (this.soldier && !this.isBoss) { const mate = this.game.enemies.find((o) => o !== this && !o.dead && o.soldier && o.pos.distanceTo(this.pos) < 25); if (mate) G.Voice.bark(mate, 'down'); }
     this.game.onEnemyKilled(this, src, part);
     if (this.type === 'bloater' && src !== 'nuke') this.explode();
   }
@@ -262,6 +266,7 @@ G.Enemy = class {
     if (this.groanT < 0) { this.groanT = G.rand(4, 10); if (dist < 22 && !this.soldier) G.Audio.S.groan(this.pos); }
 
     let custom = false;
+    this.lastStep = null;
     if (this.isBoss && !this.soldier) { speed = this.bossLogic(dt, dist, dy, toP, moveDir); }
     else if (this.soldier) { this.navMode = 'flow'; speed = this.soldierLogic(dt, dist, dy, toP, moveDir); custom = this.navMode === 'none'; }
     else if (this.T.ranged) speed = this.spitterLogic(dt, dist, toP, moveDir);
@@ -270,14 +275,26 @@ G.Enemy = class {
 
     const frozen = ['stunned', 'slam', 'windup', 'charge', 'cast', 'scream', 'pounce'].includes(this.state);
     if (moveDir.lengthSq() === 0 && !frozen && !custom && this.navMode !== 'none') {
-      const direct = dist < 2.5 || (dist < 7 && Math.abs(dy) < 1.2 && w.lineOfSight(new THREE.Vector3(this.pos.x, this.pos.y + 1.2, this.pos.z), pl.eye));
+      // ligne droite seulement au même niveau et si le sol est continu (sinon il resterait planté sous le joueur
+      // ou tomberait de l'escalier au lieu de le finir)
+      const onLadNow = w.isLadder(this.pos.x, this.pos.y + 0.1, this.pos.z) || w.isLadder(this.pos.x, this.pos.y + 1.0, this.pos.z);
+      const direct = !onLadNow && Math.abs(dy) < 1.2 && (dist < 1.6 || (dist < 7 && this.walkableTo(pl.pos) && w.lineOfSight(new THREE.Vector3(this.pos.x, this.pos.y + 1.2, this.pos.z), pl.eye)));
       if (direct || this.T.floating) moveDir.copy(toP).normalize();
       else {
         const nxt = this.big ? w.nextStepBig(this.pos.x, this.pos.y, this.pos.z) : w.nextStep(this.pos.x, this.pos.y, this.pos.z);
         // grand boss sans chemin assez large : il réapparaît ailleurs plutôt que de forcer le passage
         if (this.big) { this.bigLost = !nxt && dist > 6 ? (this.bigLost || 0) + dt : 0; if (this.bigLost > 3) { this.bigLost = 0; this.respawnFar(); } }
-        if (nxt) moveDir.set(nxt[0] + 0.5 - this.pos.x, 0, nxt[2] + 0.5 - this.pos.z).normalize();
+        if (nxt) { moveDir.set(nxt[0] + 0.5 - this.pos.x, 0, nxt[2] + 0.5 - this.pos.z).normalize(); this.lastStep = nxt; }
         else moveDir.copy(toP).normalize();
+      }
+    }
+    // échelle : la prochaine case est bien plus haute (ou plus basse) → on se place pile dans l'échelle, puis on grimpe ou on descend
+    if (this.lastStep && Math.abs(this.lastStep[1] - this.pos.y) > 1.4 && w.ladders && w.ladders.length && !this.big) {
+      const lad = w.ladders.find((l) => Math.abs(l.x + 0.5 - this.pos.x) < 1.8 && Math.abs(l.z + 0.5 - this.pos.z) < 1.8 && this.pos.y >= l.y0 - 0.6 && this.pos.y <= l.y1 + 1.6);
+      if (lad) {
+        const dx = lad.x + 0.5 - this.pos.x, dz = lad.z + 0.5 - this.pos.z;
+        if (Math.hypot(dx, dz) > 0.35) moveDir.set(dx, 0, dz).normalize();
+        else if (!w.collides(lad.x + 0.5, this.pos.y, lad.z + 0.5, this.w / 2, this.h, 'enemy')) { this.pos.x = lad.x + 0.5; this.pos.z = lad.z + 0.5; moveDir.set(0, 0, 0); }
       }
     }
 
@@ -308,11 +325,17 @@ G.Enemy = class {
       if (this.fuse <= 0) { this.hp = 0; this.dead = true; this.deadT = 2; this.explode(); game.onEnemyKilled(this, 'self', 'body', true); return false; }
     }
 
-    // séparation
+    // séparation ; dans un passage étroit (escalier), on fait la queue derrière celui qui est devant au lieu de le pousser
+    let myFd = -2;
     for (const o of game.enemies) {
       if (o === this || o.dead) continue;
       const ox = this.pos.x - o.pos.x, oz = this.pos.z - o.pos.z;
       const d2 = ox * ox + oz * oz, r = (this.w + o.w) * 0.55;
+      if (d2 < r * r * 2.2 && d2 > 1e-4 && Math.abs(this.pos.y - o.pos.y) < 1.5 && this.lastStep && moveDir.lengthSq() > 0.01 && -(ox * moveDir.x + oz * moveDir.z) > 0.25) {
+        if (myFd === -2) myFd = w.flowDistAt(this.pos.x, this.pos.y, this.pos.z);
+        const oFd = w.flowDistAt(o.pos.x, o.pos.y, o.pos.z);
+        if (myFd > 0 && oFd >= 0 && oFd < myFd) { speed *= 0.25; continue; }
+      }
       if (d2 < r * r && d2 > 1e-4 && Math.abs(this.pos.y - o.pos.y) < 1.5) { const d = Math.sqrt(d2); moveDir.x += (ox / d) * 0.8 * (1 - d / r); moveDir.z += (oz / d) * 0.8 * (1 - d / r); }
     }
     if (moveDir.lengthSq() > 1) moveDir.normalize();
@@ -330,7 +353,12 @@ G.Enemy = class {
     } else {
       // dans l'eau : on nage et on remonte à la surface (la tête dépasse)
       this.swimming = w.blockAt(this.pos.x, this.pos.y + 0.9, this.pos.z) === G.B.WATER;
-      if (this.swimming) {
+      const onLad = !this.swimming && !this.big && (w.isLadder(this.pos.x, this.pos.y + 0.1, this.pos.z) || w.isLadder(this.pos.x, this.pos.y + 1.0, this.pos.z));
+      if (onLad) {
+        const ls = this.lastStep;
+        const ty = ls ? ls[1] : pl.pos.y;
+        this.vel.y = ty > this.pos.y + 0.02 ? 3.2 : ty < this.pos.y - 0.5 ? -3.2 : -0.6;
+      } else if (this.swimming) {
         const headIn = w.blockAt(this.pos.x, this.pos.y + 1.45 * Math.min(this.size, 1.3), this.pos.z) === G.B.WATER;
         this.vel.y = headIn ? Math.min(this.vel.y + 18 * dt, 2.6) : Math.max(this.vel.y - 6 * dt, -0.6);
         this.vel.x *= 0.6; this.vel.z *= 0.6;
@@ -489,7 +517,10 @@ G.Enemy = class {
       this.losT = 0.18 + Math.random() * 0.1;
       this.los = w.lineOfSight(new THREE.Vector3(this.pos.x, this.pos.y + 1.55 * k, this.pos.z), pl.eye);
       this.hiddenLow = !w.lineOfSight(new THREE.Vector3(this.pos.x, this.pos.y + 0.95 * k, this.pos.z), pl.eye);
-      if (this.los) this.lastSeen = game.time;
+      if (this.los) {
+        if (game.time - (this.lastSeen ?? -99) > 8 && dist < 45) G.Voice.bark(this, pl.vehicle ? 'car' : this.isBoss ? 'boss' : this.T.role === 'melee' ? 'melee' : 'spot');
+        this.lastSeen = game.time;
+      }
     }
     const range = this.isBoss ? (T.id === 'pyro' ? [1, 7] : T.id === 'juggernaut' ? [3, 24] : [6, 26]) : T.range;
     this.shotT -= dt; this.grenT -= dt; this.stateT -= dt; this.searchT = (this.searchT || 0) - dt;
@@ -504,6 +535,7 @@ G.Enemy = class {
       const from = new THREE.Vector3(this.pos.x, this.pos.y + 1.6, this.pos.z), t = 1.1;
       const target = pl.pos.clone().add(pl.vel.clone().multiplyScalar(0.4));
       game.spawnProjectile('egrenade', from, new THREE.Vector3((target.x - from.x) / t, (target.y - from.y) / t + 0.5 * 20 * t, (target.z - from.z) / t), 45 * game.mods.dmg, this);
+      G.Voice.bark(this, 'grenade');
     }
     // rechargement (accroupi si à couvert)
     if (this.state === 'reload') {
@@ -516,7 +548,34 @@ G.Enemy = class {
     // tout près du joueur : on ne recule pas, on attaque au corps à corps
     if (dist < 2.6 && Math.abs(dy) < 1.8 && !this.isBoss) { this.releaseCover(); this.goal = null; this.state = 'melee'; this.navMode = 'none'; moveDir.copy(toP).normalize(); return this.speed; }
     if (this.state === 'melee') this.state = 'move';
-    if (role !== 'rush' && role !== 'melee') { const r = this.goalLogic(dt, dist, toP, moveDir, range, role); if (r !== undefined) return r; }
+    // poste fixe (mission) : il rejoint son poste puis alterne à couvert / tir sans jamais le quitter
+    if (this.anchor) {
+      const a = this.anchor, dx = a.x - this.pos.x, dz = a.z - this.pos.z;
+      if (Math.hypot(dx, dz) > 1.2 || Math.abs(a.y - this.pos.y) > 1.5) {
+        if (!this.anchorField || this.anchorFieldT < game.time) { const id = w.nodeNear(a.x, a.y, a.z); if (id >= 0) this.anchorField = w.fieldTo(id); this.anchorFieldT = game.time + 6; }
+        const nxt = this.anchorField ? w.nextStepField(this.pos.x, this.pos.y, this.pos.z, this.anchorField) : null;
+        this.navMode = 'none'; this.state = 'move';
+        if (nxt) { moveDir.set(nxt[0] + 0.5 - this.pos.x, 0, nxt[2] + 0.5 - this.pos.z).normalize(); this.lastStep = nxt; } else moveDir.set(dx, 0, dz).normalize();
+        if (this.los && dist < range[1]) this.tryFire(dt, dist, 0.6);
+        return this.speed;
+      }
+      this.navMode = 'none';
+      if (this.state !== 'cover' && this.state !== 'peek') { this.state = 'peek'; this.stateT = G.rand(1.5, 3); }
+      if (this.state === 'cover') { this.crouching = true; if (this.stateT <= 0) { this.state = 'peek'; this.stateT = T.laser ? G.rand(2.4, 3.4) : G.rand(1.6, 2.8); } return 0; }
+      if (this.los) { this.tryFire(dt, dist, 1); if (this.laser) this.updateLaser(true); } else if (this.laser) this.updateLaser(false);
+      if (this.stateT <= 0 || game.time - (this.hitAt || -9) < 0.3) { if (this.laser) this.updateLaser(false); this.state = 'cover'; this.stateT = G.rand(1.2, 2.6); }
+      return 0;
+    }
+    // joueur en étage : quelques-uns montent le chercher (assaillants en priorité), les autres se postent en hauteur ailleurs
+    if (game.playerUp && !this.isBoss) {
+      if (this.climber === undefined) {
+        const n = game.enemies.filter((o) => o.climber && !o.dead).length;
+        this.climber = role !== 'sniper' && role !== 'far' && n < 4 && (role === 'rush' || role === 'melee' || Math.random() < 0.35);
+        if (!this.climber && this.state === 'move') this.goalCD = 0;
+        G.Voice.bark(this, this.climber ? (n === 0 ? 'up' : 'climb') : 'up');
+      }
+    } else this.climber = undefined;
+    if (role !== 'rush' && role !== 'melee' || game.playerUp && !this.climber) { const r = this.goalLogic(dt, dist, toP, moveDir, range, role); if (r !== undefined) return r; }
     if (role === 'rush') return this.engageOrAdvance(dt, dist, toP, moveDir, range, 1.35);
     if (role === 'melee') {
       // court de couvert en couvert puis fonce en zigzag
@@ -543,12 +602,12 @@ G.Enemy = class {
       if (Math.hypot(dx, dz) < 0.45 && Math.abs(c.y - this.pos.y) < 1.2) { this.state = 'cover'; this.stateT = G.rand(0.8, 2.0); this.peeks = 0; this.navMode = 'none'; return 0; }
       this.navMode = 'none';
       const nxt = this.nextLocal();
-      if (nxt) moveDir.set(nxt[0] + 0.5 - this.pos.x, 0, nxt[2] + 0.5 - this.pos.z).normalize(); else moveDir.set(dx, 0, dz).normalize();
+      if (nxt) { moveDir.set(nxt[0] + 0.5 - this.pos.x, 0, nxt[2] + 0.5 - this.pos.z).normalize(); this.lastStep = nxt; } else moveDir.set(dx, 0, dz).normalize();
       // tir de couverture pendant la course (mitrailleurs)
       if (T.id === 'heavy' && this.los && dist < range[1]) this.tryFire(dt, dist, 0.6);
       return this.speed * 1.5;
     }
-    if ((this.state === 'cover' || this.state === 'peek') && game.time - (this.lastSeen || game.time) > (this.cover && this.cover.perch ? 14 : 8)) { this.releaseCover(); this.state = 'move'; this.searchT = 3; this.lastSeen = game.time - 2; }
+    if ((this.state === 'cover' || this.state === 'peek') && game.time - (this.lastSeen || game.time) > (this.cover && this.cover.perch ? 14 : 8)) { G.Voice.bark(this, 'lost'); this.releaseCover(); this.state = 'move'; this.searchT = 3; this.lastSeen = game.time - 2; }
     if (this.state === 'cover' || this.state === 'peek') {
       this.navMode = 'none';
       const compromised = this.state === 'cover' && !this.hiddenLow && this.losT < 0.05 && !this.cover.perch;
@@ -556,7 +615,7 @@ G.Enemy = class {
       if (compromised || (!perch && (dist < range[0] - 1 || dist > range[1] + 8)) || (perch && dist > 60)) { this.releaseCover(); this.state = 'move'; this.searchT = 0; return this.speed; }
       if (this.state === 'cover') {
         this.crouching = true;
-        if (this.ammo < (T.mag || 30) * 0.35) { this.state = 'reload'; this.stateT = T.reload; G.Audio.S.reload(this.pos); return 0; }
+        if (this.ammo < (T.mag || 30) * 0.35) { this.state = 'reload'; this.stateT = T.reload; G.Audio.S.reload(this.pos); G.Voice.bark(this, 'reload'); return 0; }
         if (this.stateT <= 0) { this.state = 'peek'; this.stateT = T.laser ? G.rand(2.4, 3.2) : T.role === 'far' ? G.rand(1.6, 2.4) : G.rand(0.9, 1.7); this.aimT = Math.min(this.aimT, 0.3); this.peeks = (this.peeks || 0) + 1; }
         return 0;
       }
@@ -605,40 +664,49 @@ G.Enemy = class {
       }
       this.navMode = 'none';
       const nxt = w.nextStepField(this.pos.x, this.pos.y, this.pos.z, gl.field);
-      if (nxt) moveDir.set(nxt[0] + 0.5 - this.pos.x, 0, nxt[2] + 0.5 - this.pos.z).normalize(); else moveDir.set(dx, 0, dz).normalize();
+      if (nxt) { moveDir.set(nxt[0] + 0.5 - this.pos.x, 0, nxt[2] + 0.5 - this.pos.z).normalize(); this.lastStep = nxt; } else moveDir.set(dx, 0, dz).normalize();
       if (this.los && dist < range[1] && role !== 'sniper') this.tryFire(dt, dist, 0.5);
       return this.speed * 1.45;
     }
     if (this.state !== 'move' || this.goalCD > 0) return undefined;
     this.goalCD = G.rand(3, 6);
-    const ground = w.standAt(Math.floor(pl.pos.x), Math.floor(pl.pos.z));
-    const playerHigh = ground < 999 && pl.pos.y - ground > 5;
     let g = null;
     const r = Math.random();
-    if (role === 'sniper' || role === 'far') g = r < 0.75 ? this.pickPerch() : this.pickOverwatch(18, 36);
-    else if (playerHigh) g = r < 0.35 ? this.pickPerch() : r < 0.7 ? this.pickOverwatch(14, 32) : null; // les autres montent par l'escalier
+    if (role === 'sniper' || role === 'far') g = r < 0.9 ? this.pickPerch() : this.pickOverwatch(20, 40);
+    else if (game.playerUp && !this.climber) g = r < 0.5 ? this.pickPerch() : this.pickOverwatch(14, 40); // ceux qui ne montent pas prennent de la hauteur ailleurs
     else if (!this.los && game.time - (this.lastSeen || -99) < 6 && dist < 26 && r < 0.45) g = this.pickOverwatch(7, 15); // contournement
     if (!g) return undefined;
     const field = w.fieldTo(g.id);
     const here = w.nodeNear(this.pos.x, this.pos.y, this.pos.z);
     if (here < 0 || field[here] < 0) return undefined;
+    G.Voice.bark(this, g.y - this.pos.y > 4 ? 'perch' : 'flank');
     this.releaseCover();
     this.goal = { x: g.x + 0.5, y: g.y, z: g.z + 0.5, id: g.id, field, until: game.time + 30 };
     this.state = 'goto';
     return this.speed;
   }
+  // le sol est-il continu et au même niveau jusqu'à la cible (pas de trou, pas de marche à descendre) ?
+  walkableTo(t) {
+    const w = this.game.world, y = Math.round(this.pos.y), dx = t.x - this.pos.x, dz = t.z - this.pos.z, L = Math.hypot(dx, dz);
+    for (let s = 0.5; s < L; s += 0.5) { const x = Math.floor(this.pos.x + dx * s / L), z = Math.floor(this.pos.z + dz * s / L); if (!w.canStand(x, y, z) && !w.canStand(x, y + 1, z)) return false; }
+    return true;
+  }
   claimed(x, z) { return this.game.enemies.some((o) => o !== this && !o.dead && ((o.goal && Math.hypot(o.goal.x - x, o.goal.z - z) < 2.5) || (o.cover && o.cover.owner === o && Math.hypot(o.cover.x - x, o.cover.z - z) < 2.5))); }
+  // poste en hauteur : toit (à ciel ouvert) ou étage derrière une fenêtre, de préférence avec vue sur le joueur, même loin
   pickPerch() {
-    const game = this.game, w = game.world, pl = game.player, P = game.map.perches || [];
-    if (!P.length) return null;
+    const game = this.game, w = game.world, pl = game.player, R = game.map.perches || [], Wn = game.map.windows || [];
+    if (!R.length && !Wn.length) return null;
+    const far = this.T.role === 'sniper' || this.T.role === 'far';
+    const ideal = far ? 36 : 26, dMax = far ? 75 : 55;
     let best = null, bs = -1e9;
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 40; i++) {
+      const P = Wn.length && (!R.length || Math.random() < 0.4) ? Wn : R;
       const c = P[Math.floor(Math.random() * P.length)];
       const d = Math.hypot(c.x + 0.5 - pl.pos.x, c.z + 0.5 - pl.pos.z);
-      if (d < 12 || d > 55 || this.claimed(c.x + 0.5, c.z + 0.5)) continue;
+      if (d < 12 || d > dMax || this.claimed(c.x + 0.5, c.z + 0.5)) continue;
       if (w.nav.dist[c.id] < 0) continue;
       const vis = w.lineOfSight(new THREE.Vector3(c.x + 0.5, c.y + 1.6, c.z + 0.5), pl.eye);
-      const sc = (vis ? 10 : 0) - Math.abs(d - 28) * 0.15 + c.y * 0.05 + Math.random();
+      const sc = (vis ? 10 : 0) - Math.abs(d - ideal) * 0.12 + c.y * 0.06 + Math.random() * 1.5;
       if (sc > bs) { bs = sc; best = c; }
     }
     return best;
@@ -659,6 +727,13 @@ G.Enemy = class {
   }
   // combat à découvert (assaillants, ou tireurs sans abri)
   engageOrAdvance(dt, dist, toP, moveDir, range, runMul) {
+    // il monte vers le joueur (escalier, échelle) : il continue d'avancer en tirant, sans pas de côté qui le ferait tomber
+    const under = this.game.world.get(Math.floor(this.pos.x), Math.floor(this.pos.y - 0.05), Math.floor(this.pos.z));
+    if (this.climber && (Math.abs(this.game.player.pos.y - this.pos.y) > 1.2 || (under && G.BLOCKS[under].stair) || !this.walkableTo(this.game.player.pos))) {
+      this.state = 'move'; this.navMode = 'flow';
+      if (this.los && dist <= range[1]) this.tryFire(dt, dist, 0.7);
+      return this.speed * 0.9;
+    }
     if (this.los && dist <= range[1]) {
       this.state = 'engage';
       this.navMode = 'none';
@@ -688,7 +763,7 @@ G.Enemy = class {
       this.burstLeft--; this.ammo--;
       this.shotT = this.burstLeft > 0 ? (T.rof || 0.12) : (T.rof || 0.12) + G.rand(0.5, 1.2);
       if (T.laser) this.aimT = 0;
-      if (this.ammo <= 0) { this.state = 'reload'; this.stateT = T.reload || 2.5; this.burstLeft = 0; G.Audio.S.reload(this.pos); }
+      if (this.ammo <= 0) { this.state = 'reload'; this.stateT = T.reload || 2.5; this.burstLeft = 0; G.Audio.S.reload(this.pos); G.Voice.bark(this, 'reload'); }
     }
   }
   releaseCover() { if (this.cover && this.cover.owner === this) this.cover.owner = null; this.cover = null; this.localPath = null; }

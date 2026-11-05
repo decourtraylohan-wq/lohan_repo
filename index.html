@@ -45,6 +45,10 @@
   <div id="craft" class="hidden"></div>
   <div id="cheattag" class="hidden">TRICHE — [K] passer la vague · [L] +10 000 pts · [T] spectateur</div>
   <div id="scoreboard" class="hidden"></div>
+  <div id="objective" class="hidden"><div class="otitle"></div><div class="olabel"></div><div class="oextra"></div></div>
+  <div id="objmarker" class="hidden"><i></i><span></span></div>
+  <div id="holdbar" class="hidden"><div></div></div>
+  <div id="subtitle" class="hidden"><b></b> <span></span></div>
 </div>
 
 <!-- MENUS -->
@@ -52,9 +56,11 @@
   <section id="scr-main" class="screen">
     <div class="main-left">
       <h1 class="logo">DEAD<span>BLOCK</span></h1>
-      <p class="tag">Survie zombie par vagues — monde en blocs</p>
+      <p class="tag">Histoire, missions et survie par vagues — monde en blocs</p>
       <nav class="mainnav">
-        <button data-go="play" class="big">Jouer</button>
+        <button data-go="story" class="big">Histoire</button>
+        <button data-go="missions" class="big">Missions</button>
+        <button data-go="play" class="big">Infini</button>
         <button data-go="stats">Classement &amp; stats</button>
         <button data-go="arsenal">Arsenal &amp; bestiaire</button>
         <button data-go="options">Options</button>
@@ -65,7 +71,7 @@
   </section>
 
   <section id="scr-play" class="screen hidden">
-    <header><button class="back" data-go="main">← Retour</button><h2>Nouvelle partie</h2></header>
+    <header><button class="back" data-go="main">← Retour</button><h2>Mode infini — nouvelle partie</h2></header>
     <div class="modes">
       <button class="gtype active" data-type="zombies"><b>🧟 Zombies</b><small>Hordes de morts-vivants, spéciaux et boss monstrueux</small></button>
       <button class="gtype" data-type="soldats"><b>🎖 Soldats</b><small>Escouades armées qui tirent, se couvrent et lancent des grenades</small></button>
@@ -92,6 +98,16 @@
     </div>
     <div id="mapList" class="maps"></div>
     <div class="launch"><button id="btnLaunch" class="big">Lancer la partie</button></div>
+  </section>
+
+  <section id="scr-story" class="screen hidden">
+    <header><button class="back" data-go="main">← Retour</button><h2>Histoire</h2></header>
+    <div id="storyBody"></div>
+  </section>
+
+  <section id="scr-missions" class="screen hidden">
+    <header><button class="back" data-go="main">← Retour</button><h2>Missions</h2></header>
+    <div id="missionsBody"></div>
   </section>
 
   <section id="scr-stats" class="screen hidden">
@@ -124,6 +140,8 @@
       <div><kbd>X</kbd> Mettre une plaque d'armure</div>
       <div><kbd>F</kbd> Mode construction (barricade / bouclier), <kbd>Clic gauche</kbd> pour poser</div>
       <div><kbd>Espace</kbd> Sauter</div>
+      <div>Échelles : avancer ou <kbd>Espace</kbd> pour monter, reculer ou <kbd>C</kbd> pour descendre</div>
+      <div>Histoire et missions : <kbd>E</kbd> maintenu près d'un objectif (fouiller, poser une charge, pirater…) — suivez le losange jaune</div>
       <div><kbd>Clic gauche</kbd> Tirer</div>
       <div><kbd>Clic droit</kbd> Viser</div>
       <div><kbd>R</kbd> Recharger</div>
@@ -165,6 +183,7 @@
 <script src="js/enemies.js"></script>
 <script src="js/player.js"></script>
 <script src="js/vehicles.js"></script>
+<script src="js/story.js"></script>
 <script src="js/game.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>

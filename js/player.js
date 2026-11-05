@@ -178,9 +178,22 @@ G.Player = class {
       this.vel.x = G.lerp(this.vel.x, wish.x * speed, Math.min(1, accel * dt));
       this.vel.z = G.lerp(this.vel.z, wish.z * speed, Math.min(1, accel * dt));
     }
-    if (k.Space && this.onGround) { this.vel.y = this.crouch && this.slideT <= 0 ? 6.5 : 8.2; this.onGround = false; if (this.slideT > 0) this.slideT = 0; }
+    if (k.Space && this.onGround && !this.onLadder) { this.vel.y = this.crouch && this.slideT <= 0 ? 6.5 : 8.2; this.onGround = false; if (this.slideT > 0) this.slideT = 0; }
     this.blocked = false;
-    if (this.swimming) {
+    // échelle : on grimpe (avancer ou Espace), on descend (reculer ou C), sinon on glisse doucement
+    this.onLadder = !this.swimming && (w.isLadder(this.pos.x, this.pos.y + 0.1, this.pos.z) || w.isLadder(this.pos.x, this.pos.y + 1.0, this.pos.z));
+    if (this.onLadder) {
+      const up = k.KeyW || k.Space, down = k.KeyS || k.KeyC;
+      this.vel.y = up ? 3.6 : down ? -3.8 : -0.9;
+      this.slideT = 0;
+      // en haut de l'échelle : on bascule sur le plancher le plus proche du regard
+      if (up && !w.isLadder(this.pos.x, this.pos.y + 1.0, this.pos.z)) {
+        const fx = Math.floor(this.pos.x), fz = Math.floor(this.pos.z), fy = Math.floor(this.pos.y + 0.1) + 1;
+        let best = null, bd = -9;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (w.canStand(fx + dx, fy, fz + dz)) { const d = -Math.sin(this.yaw) * dx - Math.cos(this.yaw) * dz; if (d > bd) { bd = d; best = [dx, dz]; } }
+        if (best && this.pos.y + 0.05 >= fy - 0.6) { this.vel.x = best[0] * 3; this.vel.z = best[1] * 3; }
+      }
+    } else if (this.swimming) {
       // flottaison : on coule doucement, Espace pour remonter, on peut se hisser hors de l'eau contre un bord
       this.vel.y -= 4 * dt; this.vel.y = G.clamp(this.vel.y, -2.2, 4);
       if (k.Space) this.vel.y = Math.min(this.vel.y + 14 * dt, 3.4);

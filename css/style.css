@@ -203,3 +203,37 @@ h3.sec { font-family: 'Bungee', sans-serif; font-weight: 400; letter-spacing: 1p
 .card::after { content: ''; display: block; clear: both; }
 
 #water { position: absolute; inset: 0; opacity: 0; transition: opacity .25s; background: radial-gradient(ellipse at center, rgba(40,110,160,0.35), rgba(10,40,70,0.75)); }
+
+/* ---------- Histoire / Missions ---------- */
+.story-hero { display: flex; gap: 22px; align-items: flex-start; flex-wrap: wrap; }
+.story-hero h3 { font-family: 'Bungee', Impact, sans-serif; font-size: clamp(26px, 4vw, 44px); margin: 0 0 8px; color: var(--accent2); letter-spacing: 1px; }
+.story-hero p { margin: 0; line-height: 1.5; color: #d6d9dd; max-width: 760px; }
+.chapters { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.chap { text-align: left; background: rgba(255,255,255,0.05); border: 2px solid var(--line); border-radius: 8px; padding: 0; overflow: hidden; }
+.chap.active { border-color: var(--accent2); }
+.chap.locked { opacity: .45; cursor: not-allowed; }
+.chap .thumb { height: 84px; image-rendering: pixelated; background-size: cover; background-position: center; }
+.chap .info { padding: 10px 12px 12px; }
+.chap h4 { margin: 0 0 4px; font-size: 16px; }
+.chap .num { color: var(--accent2); font-family: 'Bungee', Impact, sans-serif; font-size: 12px; letter-spacing: 1px; }
+.chap p { margin: 6px 0 0; font-size: 13px; color: var(--muted); line-height: 1.35; }
+.chap .meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; }
+.starsrow { color: var(--accent2); letter-spacing: 2px; }
+.starsrow .off { color: rgba(255,255,255,0.18); }
+#objective { position: absolute; left: 28px; top: 110px; max-width: min(420px, 60vw); background: rgba(0,0,0,0.45); border-left: 3px solid var(--accent2); padding: 8px 12px; border-radius: 4px; }
+#objective .otitle { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+#objective .olabel { font-size: 17px; font-weight: 600; margin-top: 2px; }
+#objective .oextra { font-size: 14px; color: var(--accent2); margin-top: 2px; }
+#objective .oextra:empty { display: none; }
+#objmarker { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); text-align: center; pointer-events: none; }
+#objmarker i { display: block; width: 16px; height: 16px; margin: 0 auto; border: 3px solid var(--accent2); transform: rotate(45deg); background: rgba(242,196,67,0.25); box-shadow: 0 0 10px rgba(0,0,0,0.6); }
+#objmarker span { display: block; margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--accent2); text-shadow: 0 1px 3px #000; }
+#objmarker.edge i { border-color: #ffffff; }
+#holdbar { position: absolute; left: 50%; top: calc(62% + 44px); width: 220px; height: 8px; transform: translateX(-50%); background: rgba(0,0,0,0.55); border-radius: 4px; overflow: hidden; }
+#holdbar div { height: 100%; width: 0; background: var(--accent2); }
+#subtitle { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: min(820px, 86vw); text-align: center; background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 6px; font-size: 18px; line-height: 1.4; }
+#subtitle b { letter-spacing: 1px; }
+.endstars { font-size: 40px; color: var(--accent2); letter-spacing: 6px; margin: 6px 0; }
+.endstars .off { color: rgba(255,255,255,0.15); }
+.crit { display: flex; justify-content: space-between; gap: 18px; font-size: 14px; padding: 3px 0; }
+.crit .ok { color: var(--good); } .crit .ko { color: var(--muted); }

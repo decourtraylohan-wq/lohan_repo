@@ -149,6 +149,32 @@ G.Audio = (function () {
     knifeHit() { if (!ctx) return; const d = out(null, 0.7, 0.05); noise(d, 0.1, 700, 1.2, 0.6, 'lowpass', 0.002, 0, brownBuf); tone(d, 900, 0.05, 0.1, 'triangle', 500); },
     glass(pos) { if (!ctx) return; const d = out(pos || null, 0.6, 0.2); noise(d, 0.25, 5000, 0.8, 0.5, 'highpass'); for (let i = 0; i < 4; i++) tone(d, G.rand(2500, 4500), 0.12, 0.05, 'sine', null, i * 0.03); },
     land() { if (!ctx) return; noise(out(null, 0.5, 0.05), 0.12, 400, 1, 0.4, 'lowpass', 0.002, 0, brownBuf); },
+    // cris de mort : voix synthétisée (source glottale + formants), râle des zombies, rugissement des boss
+    death(pos, kind, pitch = 1) {
+      if (!ctx) return;
+      const d = out(pos, kind === 'boss' ? 1.2 : 0.8, 0.35), t = ctx.currentTime;
+      if (kind === 'soldier') {
+        const f0 = G.rand(150, 210) * pitch, dur = G.rand(0.45, 0.7);
+        const o = ctx.createOscillator(); o.type = 'sawtooth';
+        o.frequency.setValueAtTime(f0 * 1.25, t); o.frequency.exponentialRampToValueAtTime(f0, t + 0.08); o.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + dur);
+        const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        for (const [fr, q, gg] of [[750, 6, 1], [1150, 8, 0.7], [2500, 10, 0.25]]) { const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.setValueAtTime(fr, t); f.frequency.linearRampToValueAtTime(fr * 0.8, t + dur); f.Q.value = q; const fg = ctx.createGain(); fg.gain.value = gg; o.connect(f); f.connect(fg); fg.connect(g); }
+        g.connect(d); o.start(t); o.stop(t + dur + 0.05);
+        noise(d, dur * 0.8, 1800, 1, 0.12, 'bandpass', 0.02, 0.05);
+        noise(d, 0.15, 300, 1, 0.35, 'lowpass', 0.002, dur * 0.9, brownBuf); // chute au sol
+      } else if (kind === 'boss') {
+        tone(d, 70, 1.6, 0.6, 'sawtooth', 30, 0, 0.05); tone(d, 105, 1.4, 0.35, 'square', 45, 0.05, 0.05);
+        noise(d, 1.6, 500, 1.5, 0.6, 'bandpass', 0.05, 0, brownBuf, 120);
+        noise(d, 0.6, 250, 0.7, 0.8, 'lowpass', 0.003, 1.2, brownBuf);
+      } else {
+        const f = G.rand(60, 95) * pitch;
+        tone(d, f * 1.6, 0.7, 0.3, 'sawtooth', f * 0.5, 0, 0.03);
+        noise(d, 0.7, f * 8, 3, 0.3, 'bandpass', 0.03, 0, brownBuf, f * 2);
+        noise(d, 0.25, 700, 1.2, 0.3, 'bandpass', 0.005, 0.35, noiseBuf, 200); // gargouillis
+      }
+    },
+    radio() { if (!ctx) return; const d = out(null, 0.5, 0); noise(d, 0.18, 2500, 2, 0.25, 'bandpass', 0.002); tone(d, 1200, 0.05, 0.06, 'square', null, 0.12); },
+    objective() { if (!ctx) return; const d = out(null, 0.6, 0.4); [587, 880, 1175].forEach((f, i) => tone(d, f, 0.3, 0.15, 'triangle', null, i * 0.09)); },
   };
 
   // ambiance continue (vent, lave, ville…)
@@ -167,3 +193,66 @@ G.Audio = (function () {
 
   return { init, setVolume, setListener, startAmbient, stopAmbient, S };
 })();
+
+// Voix : les soldats parlent (synthèse vocale du navigateur, en français), sans saturer
+G.Voice = (function () {
+  const LINES = {
+    spot: ['Contact !', 'Je le vois !', 'Cible repérée !', 'Il est là !', 'Ennemi en vue !', 'Là-bas !'],
+    up: ["Il est dans l'immeuble !", 'Il est en hauteur !', 'Il est à l\'étage !', 'Il se planque là-haut !'],
+    climb: ['Je monte !', 'Couvrez-moi, je monte !', "J'y vais, je monte !", 'On monte le chercher !'],
+    perch: ['Je prends de la hauteur.', 'Je me poste sur le toit.', 'En position.', 'Je le couvre depuis là-haut.'],
+    reload: ['Je recharge !', 'Rechargement !', 'Couvrez-moi, je recharge !'],
+    grenade: ['Grenade !', 'Grenade lancée !', 'Je le débusque !'],
+    hit: ['Je suis touché !', 'Aïe ! Touché !', 'Médic !', "Je pisse le sang !"],
+    down: ['Homme à terre !', 'On a perdu un gars !', 'Il en a eu un !', 'Merde, il est mort !'],
+    flank: ['Je le contourne !', 'Prenez-le à revers !', 'Je passe par le flanc !'],
+    lost: ['Où il est passé ?', "Je l'ai perdu !", 'Il a disparu !'],
+    melee: ['Je vais te saigner !', "T'es à moi !", 'Viens là !'],
+    car: ['Il a un véhicule !', 'Visez la voiture !'],
+    boss: ['Tu ne peux pas m\'arrêter !', 'Je vais te broyer !', 'Personne ne sort d\'ici vivant !'],
+  };
+  let last = 0, voices = null, enabled = true;
+  const lastKind = {};
+  function pickVoice() {
+    if (voices && voices.length) return voices;
+    try { voices = (window.speechSynthesis.getVoices() || []).filter((v) => /^fr/i.test(v.lang)); } catch (e) { voices = []; }
+    return voices;
+  }
+  // un ennemi dit une réplique : volume selon la distance, une seule voix à la fois
+  function bark(e, kind, force) {
+    if (!enabled || !window.speechSynthesis || !LINES[kind]) return false;
+    const game = e.game, pl = game.player, now = performance.now() / 1000;
+    const d = Math.hypot(e.pos.x - pl.pos.x, e.pos.y - pl.pos.y, e.pos.z - pl.pos.z);
+    if (d > 48) return false;
+    if (!force && (now - last < 1.6 || now - (lastKind[kind] || -99) < 5)) return false;
+    try {
+      if (window.speechSynthesis.speaking && !force) return false;
+      if (force) window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(G.pick(LINES[kind]));
+      u.lang = 'fr-FR';
+      const vs = pickVoice(); if (vs.length) u.voice = vs[(e.voiceIdx || 0) % vs.length];
+      u.pitch = e.voicePitch || 1; u.rate = 1.2;
+      u.volume = G.clamp((G.Ranked.profile.settings.vol ?? 0.6) * 1.6 / (1 + d * 0.06), 0.05, 1);
+      window.speechSynthesis.speak(u);
+      last = now; lastKind[kind] = now;
+      return true;
+    } catch (err) { return false; }
+  }
+  // voix radio (mode histoire) : le même canal, priorité absolue
+  function radio(text, who) {
+    if (!window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text); u.lang = 'fr-FR';
+      const vs = pickVoice(); if (vs.length) u.voice = vs[who === 'handler' ? 0 : (vs.length > 1 ? 1 : 0)];
+      u.pitch = who === 'handler' ? 0.85 : who === 'vex' ? 0.75 : 1.05; u.rate = 1.08;
+      u.volume = G.clamp((G.Ranked.profile.settings.vol ?? 0.6) * 1.5, 0.1, 1);
+      window.speechSynthesis.speak(u);
+      last = performance.now() / 1000 + 2;
+    } catch (e) { /* pas de synthèse vocale */ }
+  }
+  function stop() { try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) { /* ignoré */ } }
+  function setEnabled(v) { enabled = v; if (!v) stop(); }
+  return { bark, radio, stop, setEnabled, LINES };
+})();
+

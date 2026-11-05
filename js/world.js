@@ -9,7 +9,7 @@ G.B = {
   BIRCH: 55, BIRCH_LEAVES: 56, DARK_LOG: 57, DARK_LEAVES: 58, AUTUMN_LEAVES: 59, SANDBAG: 60, CHISELED: 61, PORTAL: 62, BUSH: 63, MUD: 64, ROCK: 65, SCORIA: 66, SCORIA_DARK: 67, PODZOL: 68, BARBED: 69, WALLPANEL: 70,
   VOLCROCK: 71, BASALT2: 72, ASH: 73, SCORIA3: 74, ASPHALT_CRACK: 75, BARREL: 76, LOCKER: 77, BIN: 78, GRAFFITI1: 79, GRAFFITI2: 80, RUBBLE: 81, CABINET: 82,
   STAIR_STONE: 83, STAIR_WOOD: 84, STAIR_DARK: 85, STAIR_CONCRETE: 86, STAIR_SAND: 87, STAIR_METAL: 88, SNOW_BLOCK: 89, LAVA_FLOW: 90,
-  LIMESTONE: 91, ZINC: 92, BROWNSTONE: 93,
+  LIMESTONE: 91, ZINC: 92, BROWNSTONE: 93, LADDER: 94,
 };
 
 G.BLOCKS = (function () {
@@ -104,6 +104,8 @@ G.BLOCKS = (function () {
   def(B.LIMESTONE, 'limestone');
   def(B.ZINC, 'zinc');
   def(B.BROWNSTONE, 'brownstone');
+  // échelle : on la traverse, on y grimpe (orientation = côté du mur, via stairDir)
+  def(B.LADDER, 'ladder', null, null, { solid: false, opaque: false, bulletPass: true, ladder: true });
   // marches d'escalier (forme de vraie marche, collision d'un bloc plein)
   const stair = { opaque: false, stair: true };
   def(B.STAIR_STONE, 'stonebrick', null, null, stair);
@@ -148,6 +150,9 @@ G.World = class {
     return b !== 0 && G.BLOCKS[b].solid;
   }
   blockAt(x, y, z) { return this.get(Math.floor(x), Math.floor(y), Math.floor(z)); }
+  isLadder(x, y, z) { return this.get(Math.floor(x), Math.floor(y), Math.floor(z)) === G.B.LADDER; }
+  // pose une échelle verticale de y0 à y1 contre le côté "dir" (0:+x 1:-x 2:+z 3:-z)
+  setLadder(x, y0, y1, z, dir) { for (let y = y0; y <= y1; y++) this.setStair(x, y, z, G.B.LADDER, dir); }
   canStand(x, y, z) { return y >= 1 && this.isSolid(x, y - 1, z) && !this.isSolid(x, y, z) && !this.isSolid(x, y + 1, z); }
 
   // ---------- Maillage ----------
@@ -220,6 +225,13 @@ G.World = class {
       if (!b) continue;
       const def = G.BLOCKS[b];
       if (def.plant) { this._plant(groups.opaque, x, y, z, getUV(def.top), rnd); continue; }
+      if (def.ladder) {
+        const dir = this.stairDir.get(this.idx(x, y, z)) || 0, uvl = getUV('ladder');
+        const a0 = dir === 0 ? x + 0.86 : dir === 1 ? x + 0.08 : x, a1 = dir === 0 ? x + 0.92 : dir === 1 ? x + 0.14 : x + 1;
+        const c0 = dir === 2 ? z + 0.86 : dir === 3 ? z + 0.08 : z, c1 = dir === 2 ? z + 0.92 : dir === 3 ? z + 0.14 : z + 1;
+        this._boxB(groups.opaque, a0, y, c0, a1, y + 1, c1, uvl, 0.95);
+        continue;
+      }
       if (def.stair) {
         const dir = this.stairDir.get(this.idx(x, y, z)) || 0, uvr = getUV(def.side);
         const above = this.get(x, y + 1, z);
@@ -505,6 +517,26 @@ G.World = class {
       }
     }
     outStart[N] = outList.length;
+    // échelles : arêtes entre le pied de l'échelle et les cases d'arrivée en haut (dans les deux sens)
+    this.ladders = [];
+    const extra = new Map();
+    const addEdge = (a, b) => { if (!extra.has(a)) extra.set(a, []); extra.get(a).push(b); };
+    for (let z = 0; z < D; z++) for (let x = 0; x < W; x++) {
+      for (let y = 1; y < H - 1; y++) {
+        if (this.get(x, y, z) !== G.B.LADDER || this.get(x, y - 1, z) === G.B.LADDER) continue;
+        let yt = y; while (this.get(x, yt + 1, z) === G.B.LADDER) yt++;
+        const base = nodeAt[this.idx(x, y, z)];
+        const tops = [];
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const id = nodeAt[this.idx(x + dx, yt + 1, z + dz)]; if (id >= 0) tops.push(id); }
+        if (base >= 0) for (const t of tops) { addEdge(base, t); addEdge(t, base); }
+        this.ladders.push({ x, z, y0: y, y1: yt });
+      }
+    }
+    if (extra.size) {
+      const ol = [], os = new Int32Array(N + 1);
+      for (let i = 0; i < N; i++) { os[i] = ol.length; for (let k = outStart[i]; k < outStart[i + 1]; k++) ol.push(outList[k]); for (const t of extra.get(i) || []) ol.push(t); }
+      os[N] = ol.length; outStart.set(os); outList.length = 0; for (const t of ol) outList.push(t);
+    }
     // arêtes inverses pour le BFS depuis le joueur
     const inCount = new Int32Array(N + 1);
     for (const t of outList) inCount[t + 1]++;
@@ -526,7 +558,17 @@ G.World = class {
     const fx = Math.floor(x), fz = Math.floor(z);
     if (fx < 0 || fz < 0 || fx >= this.W || fz >= this.D) return -1;
     const fy = Math.floor(y + 0.05);
-    for (let yy = Math.min(this.H - 2, fy + 1); yy >= Math.max(1, fy - 8); yy--) {
+    for (let yy = Math.min(this.H - 2, fy + 1); yy >= Math.max(1, fy - 1); yy--) { const id = n.nodeAt[this.idx(fx, yy, fz)]; if (id >= 0) return id; }
+    // au bord d'un trou (trémie, palier) : on reste au niveau des pieds en prenant la case voisine la plus proche
+    let best = -1, bd = 9;
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dz) continue;
+      const cx = fx + dx, cz = fz + dz; if (cx < 0 || cz < 0 || cx >= this.W || cz >= this.D) continue;
+      const id = n.nodeAt[this.idx(cx, fy, cz)]; if (id < 0) continue;
+      const d = Math.hypot(cx + 0.5 - x, cz + 0.5 - z); if (d < bd && d < 1.0) { bd = d; best = id; }
+    }
+    if (best >= 0) return best;
+    for (let yy = fy - 2; yy >= Math.max(1, fy - 8); yy--) {
       const id = n.nodeAt[this.idx(fx, yy, fz)];
       if (id >= 0) return id;
     }

@@ -260,8 +260,18 @@ G.Game = class {
   buildMinimap() { this.minimapImg = G.topDown(this.world); }
 
   // ---------- Démarrage / fin ----------
+  // mode Histoire / Missions : même moteur, objectifs à la place des vagues
+  startMission(def, kind) {
+    if (this.campaign) this.campaign.dispose();
+    this.pendingMission = def;
+    this.start(def.map, 'classic', def.type, null);
+    this.pendingMission = null;
+    this.campaign = new G.MissionRun(this, def, kind);
+    this.campaign.begin();
+  }
   start(mapId, mode, gameType = 'zombies', cheats = null) {
     G.Audio.init();
+    if (this.campaign) { this.campaign.dispose(); this.campaign = null; }
     this.loadMap(mapId);
     this.cheats = cheats && cheats.on ? cheats : null;
     this.lastCheats = this.cheats;
@@ -299,6 +309,8 @@ G.Game = class {
   }
   lockPointer() { try { const p = this.canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* ignoré */ } }
   quitToMenu() {
+    G.Voice.stop();
+    if (this.campaign) { this.campaign.dispose(); this.campaign = null; }
     this.phase = 'menu'; this.paused = false;
     if (document.pointerLockElement) document.exitPointerLock();
     G.UI.showHUD(false);
@@ -306,6 +318,7 @@ G.Game = class {
     this.loadMap(this.map.def.id);
   }
   setPaused(p) {
+    if (p) G.Voice.stop();
     if (this.phase === 'menu' || this.phase === 'over') return;
     this.paused = p;
     G.UI.showPause(p);
@@ -330,7 +343,8 @@ G.Game = class {
       if (e.code === 'Digit3' && !this.craftOpen) pl.switchTo(2);
       if (key === 'e') {
         // E : interagir si une station ou un véhicule est à portée, sinon coup de couteau
-        if (this.nearestStation()) this.interact();
+        if (this.campaign && this.campaign.nearInteract()) { /* maintien de E géré par la mission */ }
+        else if (this.nearestStation()) this.interact();
         else if (this.nearestVehicle()) this.enterVehicle(this.nearestVehicle());
         else pl.melee();
       }
@@ -440,6 +454,13 @@ G.Game = class {
       this.flowT = 0.25; this.world.computeFlow(pl.pos.x, pl.pos.y, pl.pos.z);
       if (this.enemies.some((e) => e.big && !e.dead)) this.world.computeFlowBig(pl.pos.x, pl.pos.y, pl.pos.z);
     }
+    // joueur en étage (immeuble, tour, toit) : les ennemis se répartissent entre ceux qui montent et ceux qui se postent
+    this.upT = (this.upT || 0) - dt;
+    if (this.upT <= 0) {
+      this.upT = 0.5;
+      const w = this.world, ground = w.standAt(Math.floor(pl.pos.x), Math.floor(pl.pos.z));
+      this.playerUp = !pl.vehicle && ground < 999 && pl.pos.y - ground > 3.5;
+    }
     this.updateBorder(dt);
     this.updateWater(dt);
     G.Audio.setListener(pl.eye.x, pl.eye.y, pl.eye.z, pl.yaw);
@@ -447,7 +468,7 @@ G.Game = class {
     this.beatT = (this.beatT || 0) - dt;
     if (pl.hp < pl.maxHp * 0.3 && this.beatT <= 0) { this.beatT = 0.9; G.Audio.S.heartbeat(); }
 
-    this.updateWaves(dt);
+    if (this.campaign) this.campaign.update(dt); else this.updateWaves(dt);
     // ennemis
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
@@ -482,7 +503,7 @@ G.Game = class {
     this.borderC = new THREE.Vector2(c.x, c.z);
     const full = Math.max(c.x, W - c.x, c.z, this.world.D - c.z) + 1;
     this.borderFull = full;
-    this.borderStart = this.cheats ? full : this.gameType === 'soldats' ? 22 : 16;
+    this.borderStart = this.cheats || this.pendingMission ? full : this.gameType === 'soldats' ? 22 : 16;
     this.borderWaves = this.gameType === 'soldats' ? 3 : 5;
     this.borderR = this.borderTarget = this.borderStart;
     const c2 = document.createElement('canvas'); c2.width = c2.height = 32;
@@ -783,6 +804,7 @@ G.Game = class {
   }
   onEnemyKilled(e, src, part, self) {
     if (e === this.boss) { this.boss = null; }
+    if (this.campaign) this.campaign.onKilled(e, part);
     if (self) return;
     this.stats.kills++; this.curWave.kills++;
     if (part === 'head') { this.stats.headshots++; this.curWave.hs++; }
@@ -870,8 +892,9 @@ G.Game = class {
       this.gameOver();
     }
   }
-  gameOver() {
+  gameOver(reason) {
     if (this.phase === 'over' || this.phase === 'menu') return;
+    if (this.campaign) { this.campaign.fail(reason || 'death'); return; }
     this.phase = 'over';
     G.Audio.S.gameOver();
     if (this.curWave && this.waveStats[this.waveStats.length - 1] !== this.curWave) { this.curWave.t = this.time - this.curWave.t0; this.curWave.died = true; this.waveStats.push(this.curWave); }
@@ -894,6 +917,15 @@ G.Game = class {
     if (document.pointerLockElement) document.exitPointerLock();
     G.UI.showHUD(false);
     setTimeout(() => G.UI.showGameOver(run, res), 300);
+  }
+
+  endMission(success, res) {
+    this.phase = 'over';
+    G.Voice.stop();
+    if (success) G.Audio.S.rankUp(); else G.Audio.S.gameOver();
+    if (document.pointerLockElement) document.exitPointerLock();
+    G.UI.showHUD(false);
+    setTimeout(() => G.UI.showMissionEnd(res), 300);
   }
 
   // ---------- Explosions / effets ----------
@@ -1209,6 +1241,8 @@ G.Game = class {
     }
     return best;
   }
+  // en mission, toutes les stations sont actives d'emblée
+  locked(d) { return !this.campaign && this.wave < d.wave; }
   stationPrompt(s) {
     const d = s.def, pl = this.player;
     if (d.type === 'box') {
@@ -1226,12 +1260,12 @@ G.Game = class {
     if (d.type === 'bench') return this.craftOpen ? 'Établi : touches 1 à 4 pour fabriquer — [E] fermer' : '[E] Établi : fabriquer barricades, boucliers, armure';
     if (d.type === 'perk') {
       const P = G.PERKS[d.perk];
-      if (this.wave < d.wave) return P.name + ' — inactif (vague ' + d.wave + ')';
+      if (this.locked(d)) return P.name + ' — inactif (vague ' + d.wave + ')';
       if (pl.perks.has(d.perk)) return P.name + ' — déjà acquis';
       return '[E] ' + P.name + ' : ' + P.desc + ' — ' + P.price;
     }
     if (d.type === 'forge') {
-      if (this.wave < d.wave) return 'Forge ★ — inactive (vague ' + d.wave + ')';
+      if (this.locked(d)) return 'Forge ★ — inactive (vague ' + d.wave + ')';
       if (pl.slot.up) return 'Forge ★ — arme déjà améliorée';
       return '[E] Forge ★ : améliorer ' + G.WEAPONS[pl.slot.id].name + ' — 5000';
     }
@@ -1259,7 +1293,7 @@ G.Game = class {
       return;
     }
     if (d.type === 'perk') {
-      if (this.wave < d.wave || pl.perks.has(d.perk)) { G.Audio.S.deny(); return; }
+      if (this.locked(d) || pl.perks.has(d.perk)) { G.Audio.S.deny(); return; }
       const P = G.PERKS[d.perk];
       if (!this.spend(P.price)) return;
       pl.perks.add(d.perk);
@@ -1268,7 +1302,7 @@ G.Game = class {
       return;
     }
     if (d.type === 'forge') {
-      if (this.wave < d.wave || pl.slot.up) { G.Audio.S.deny(); return; }
+      if (this.locked(d) || pl.slot.up) { G.Audio.S.deny(); return; }
       if (!this.spend(5000)) return;
       pl.slot.up = true; const st = G.weaponStats(pl.slot); pl.slot.mag = st.mag; pl.slot.reserve = st.reserve;
       pl.setViewWeapon();
@@ -1281,7 +1315,7 @@ G.Game = class {
     for (const s of this.stations) {
       const d = s.def;
       if (d.type === 'perk' || d.type === 'forge') {
-        const on = this.wave >= d.wave;
+        const on = !this.locked(d);
         const col = on ? (d.type === 'perk' ? G.PERKS[d.perk].color : 0xff8020) : 0x444444;
         if (s.stripe.material.color.getHex() !== col) s.stripe.material.color.setHex(col);
         if (s.icon) s.icon.material.opacity = on ? 1 : 0.35;
@@ -1495,13 +1529,15 @@ G.Game = class {
   updateHUD(dt) {
     const pl = this.player, st = pl.wstats, s = pl.slot;
     const near = this.nearestStation();
+    const mi = this.campaign ? this.campaign.hud() : null;
+    G.UI.updateObjective(mi, this.camera);
     G.UI.updateHUD({
-      points: this.points, wave: this.wave, hp: pl.hp, maxHp: pl.maxHp,
+      points: this.points, wave: this.campaign ? '' : this.wave, hp: pl.hp, maxHp: pl.maxHp,
       weapon: st.name, mag: this.power.fury > 0 ? '∞' : s.mag, reserve: s.reserve, reloading: pl.reloadT > 0,
       grenades: pl.grenades, armor: pl.armor, maxArmor: pl.maxArmor, plates: pl.plates, plateT: pl.plateT, builds: pl.builds, buildItem: this.buildItem, crouch: pl.crouch, cheats: !!this.cheats, perks: [...pl.perks], power: this.power,
-      prompt: pl.vehicle ? 'Véhicule ' + Math.max(0, Math.round(pl.vehicle.hp / pl.vehicle.maxHp * 100)) + ' % — [ZQSD] conduire · [Espace] frein · [E] sortir' : pl.spectator ? 'SPECTATEUR — [T] quitter' : near ? this.stationPrompt(near) : this.nearestVehicle() ? '[E] Conduire le véhicule' : (this.phase === 'intermission' && this.wave > 0 ? 'Vague suivante dans ' + Math.ceil(this.phaseT) + ' s — [N] pour lancer' : ''),
+      prompt: mi && mi.prompt ? mi.prompt : pl.vehicle ? 'Véhicule ' + Math.max(0, Math.round(pl.vehicle.hp / pl.vehicle.maxHp * 100)) + ' % — [ZQSD] conduire · [Espace] frein · [E] sortir' : pl.spectator ? 'SPECTATEUR — [T] quitter' : near ? this.stationPrompt(near) : this.nearestVehicle() ? '[E] Conduire le véhicule' : (this.phase === 'intermission' && this.wave > 0 ? 'Vague suivante dans ' + Math.ceil(this.phaseT) + ' s — [N] pour lancer' : ''),
       boss: this.boss && !this.boss.dead ? { name: this.boss.T.name, hp: this.boss.hp / this.boss.maxHp, stunned: this.boss.state === 'stunned' } : null,
-      left: this.phase === 'active' ? this.toSpawn + this.aliveCount() : 0,
+      left: this.campaign ? 0 : this.phase === 'active' ? this.toSpawn + this.aliveCount() : 0,
       ads: pl.ads, sprint: pl.sprinting, stamina: pl.stamina, slots: pl.slots.map((x, i) => ({ name: G.weaponStats(x).name, cur: i === pl.cur })),
     });
     this.drawMinimap();

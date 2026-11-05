@@ -14,6 +14,9 @@ puis va sur http://localhost:8000.
 
 ## Contenu
 
+- **Mode Histoire : « Protocole Cendre »** (5 chapitres, un par carte). Vous êtes Sacha « Vex » Varenne, ancien commando devenu nettoyeur. Opale, une commanditaire qui ne parle qu'à la radio, vous envoie retrouver un virologue disparu. Derrière lui : ORBIS, la milice privée du général Kessler, une spore exhumée sous la pyramide du désert et une épidémie. Au programme : fouiller une maison au milieu des morts, saboter des foreuses, éliminer un colonel posté sur un mirador puis fuir par la mine, pirater un terminal et le défendre, libérer le docteur sous les combles d'un immeuble haussmannien, survivre à une trahison et abattre le général Kessler sur la place. Les objectifs s'affichent en haut à gauche, un losange jaune indique où aller, et les dialogues radio sont sous-titrés et lus à voix haute. Chaque chapitre se note sur trois étoiles et débloque le suivant.
+- **Mode Missions** : six contrats rejouables tirés de l'histoire (survie, sabotage contre la montre, assassinat, défense, exfiltration à travers la ville, chasse aux tireurs d'élite), débloqués au fil des chapitres, avec trois étoiles et un record de temps.
+- **Mode Infini** : la survie par vagues d'origine.
 - **2 types de partie**, à choisir avant de lancer :
   - **Zombies** : des hordes et des boss monstrueux.
   - **Soldats** : des escouades armées qui tirent en rafales, se déplacent, lancent des grenades et utilisent des fusils de précision à laser.
@@ -50,6 +53,9 @@ puis va sur http://localhost:8000.
 - **Eau** : on nage (Espace pour remonter ou se hisser sur un bord) et la vue devient bleue sous l'eau. Les ennemis nagent aussi, et les soldats ne peuvent pas tirer dans l'eau.
 - **Dégâts de chute** à partir d'environ 4 blocs (pas dans l'eau).
 - **Toundra** : mirador sur pilotis au sommet de la colline, escalier qui tourne autour jusqu'à la plateforme (armoire du sniper), trappe vers une cave creusée dans la colline et mine cachée qui ressort au pied de la colline par une entrée boisée.
+- **Échelles** dans les immeubles haussmanniens : des combles jusqu'au toit en zinc (trappe). Le joueur comme les soldats savent les monter et les descendre.
+- **Les soldats parlent** (« Contact ! », « Il est dans l'immeuble ! », « Je monte ! », « Je recharge ! », « Homme à terre ! »…) et tous les ennemis poussent un cri en mourant.
+- **IA quand vous êtes en hauteur** : quatre soldats au plus montent vous chercher (ils font la queue dans les escaliers au lieu de se bousculer), les autres se postent aux fenêtres d'autres immeubles ou sur les toits, même loin. Les tireurs d'élite prennent presque toujours de la hauteur.
 - **Escaliers** en vraies marches partout, avec un palier en haut et une marche tournée quand ils débouchent sur le côté, avec assez de hauteur pour monter. La Ville a des escaliers de secours métalliques à la new-yorkaise (passerelle à chaque étage et volées alternées).
 - **Mode Classé** : 7 rangs, de Bronze à Légende. La difficulté augmente avec le rang.
 - **Statistiques** : carrière, record par carte et par type de partie, historique et détail vague par vague. Tout est sauvegardé dans le navigateur.
@@ -63,7 +69,8 @@ puis va sur http://localhost:8000.
 | C | S'accroupir (double appui : rester accroupi) ; glissade en sprintant |
 | X | Plaque d'armure |
 | F | Mode construction |
-| Espace | Sauter |
+| Espace | Sauter (sur une échelle : monter) |
+| E maintenu | Objectif de mission : fouiller, poser une charge, pirater… |
 | Clic gauche / droit | Tirer / viser |
 | R | Recharger |
 | 1 2 3 / molette | Changer d'arme |
