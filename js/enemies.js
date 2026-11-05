@@ -308,7 +308,7 @@ G.Enemy = class {
       else if (this.atkT <= 0) { this.atkT = this.isBoss ? 1.3 : 1.0; this.lastAtk = game.time; game.damagePlayer(this.dmg, this); }
       if (dist < 0.9) speed = 0;
     }
-    if (this.soldier && dist < (this.T.role === 'melee' ? 1.9 : 1.7) && Math.abs(dy) < 1.6 && !this.swimming) {
+    if (this.soldier && !pl.vehicle && dist < (this.T.role === 'melee' ? 1.9 : 1.7) && Math.abs(dy) < 1.6 && !this.swimming) {
       // coup de couteau (égorgeur) ou de crosse
       if (this.atkT <= 0) {
         const knife = this.T.role === 'melee';
@@ -545,8 +545,17 @@ G.Enemy = class {
       return this.cover ? 0 : this.speed * 0.6;
     }
     const role = this.isBoss ? 'rifle' : T.role;
+    // joueur en voiture : pas de corps à corps, on s'écarte de sa trajectoire et on tire sur le véhicule
+    const car = pl.vehicle && !pl.vehicle.dead ? pl.vehicle : null;
+    if (car && !this.isBoss && dist < 9) {
+      this.releaseCover(); this.goal = null; this.state = 'engage'; this.navMode = 'none';
+      const side = new THREE.Vector3(-toP.z, 0, toP.x).normalize().multiplyScalar(this.strafeDir || 1);
+      moveDir.copy(toP).normalize().multiplyScalar(-1).addScaledVector(side, 0.7).normalize();
+      if (this.los && role !== 'melee') this.tryFire(dt, dist, 0.9);
+      return this.speed * 1.35;
+    }
     // tout près du joueur : on ne recule pas, on attaque au corps à corps
-    if (dist < 2.6 && Math.abs(dy) < 1.8 && !this.isBoss) { this.releaseCover(); this.goal = null; this.state = 'melee'; this.navMode = 'none'; moveDir.copy(toP).normalize(); return this.speed; }
+    if (!car && dist < 2.6 && Math.abs(dy) < 1.8 && !this.isBoss) { this.releaseCover(); this.goal = null; this.state = 'melee'; this.navMode = 'none'; moveDir.copy(toP).normalize(); return this.speed; }
     if (this.state === 'melee') this.state = 'move';
     // poste fixe (mission) : il rejoint son poste puis alterne à couvert / tir sans jamais le quitter
     if (this.anchor) {
@@ -703,7 +712,7 @@ G.Enemy = class {
       const P = Wn.length && (!R.length || Math.random() < 0.4) ? Wn : R;
       const c = P[Math.floor(Math.random() * P.length)];
       const d = Math.hypot(c.x + 0.5 - pl.pos.x, c.z + 0.5 - pl.pos.z);
-      if (d < 12 || d > dMax || this.claimed(c.x + 0.5, c.z + 0.5)) continue;
+      if (d < 12 || d > dMax || this.claimed(c.x + 0.5, c.z + 0.5) || !game.insideBorder(c.x + 0.5, c.z + 0.5, 1)) continue;
       if (w.nav.dist[c.id] < 0) continue;
       const vis = w.lineOfSight(new THREE.Vector3(c.x + 0.5, c.y + 1.6, c.z + 0.5), pl.eye);
       const sc = (vis ? 10 : 0) - Math.abs(d - ideal) * 0.12 + c.y * 0.06 + Math.random() * 1.5;
@@ -716,7 +725,7 @@ G.Enemy = class {
     for (let i = 0; i < 30; i++) {
       const a = Math.random() * Math.PI * 2, rr = G.rand(r0, r1);
       const x = Math.floor(pl.pos.x + Math.cos(a) * rr), z = Math.floor(pl.pos.z + Math.sin(a) * rr);
-      if (x < 2 || z < 2 || x >= w.W - 2 || z >= w.D - 2) continue;
+      if (x < 2 || z < 2 || x >= w.W - 2 || z >= w.D - 2 || !game.insideBorder(x + 0.5, z + 0.5, 1)) continue;
       const y = w.standAt(x, z); if (y >= 999) continue;
       const id = w.nodeNear(x + 0.5, y, z + 0.5); if (id < 0 || w.nav.dist[id] < 0) continue;
       if (w.get(x, y, z) === G.B.WATER || this.claimed(x + 0.5, z + 0.5)) continue;
@@ -790,6 +799,7 @@ G.Enemy = class {
       if (advance && dP > curD - 2) continue;
       if (retreat && dP < curD + 2) continue;
       if (!hideOnly && (dP < range[0] || dP > range[1])) continue;
+      if (!game.insideBorder(px, pz, 1)) continue; // jamais d'abri hors de la zone de combat
       if (game.enemies.some((o) => o !== this && o.cover && o.cover.owner === o && Math.hypot(o.cover.x - px, o.cover.z - pz) < 1.5)) continue;
       if (w.lineOfSight(new THREE.Vector3(px, yy + 0.95, pz), pl.eye)) continue; // doit cacher le soldat accroupi
       const peek = w.lineOfSight(new THREE.Vector3(px, yy + 1.6, pz), pl.eye);

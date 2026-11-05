@@ -179,9 +179,12 @@ h3.sec { font-family: 'Bungee', sans-serif; font-weight: 400; letter-spacing: 1p
 #scoreboard h3 { margin: 0 0 10px; font-family: 'Bungee', sans-serif; font-weight: 400; }
 
 /* armure, inventaire, établi, triche */
-#armorbar { display: flex; gap: 3px; margin-bottom: 4px; }
-#armorbar i { flex: 1; height: 7px; background: rgba(0,0,0,0.55); border: 1px solid rgba(0,0,0,0.8); border-radius: 2px; overflow: hidden; }
-#armorbar b { display: block; height: 100%; width: 0; background: linear-gradient(#8ec4ff, #3a7ad8); transition: width .15s; }
+#armorbar { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+#armorbar .al { color: #8ec4ff; font-size: 16px; width: 18px; text-shadow: 0 1px 2px #000; }
+#armorbar i { flex: 1; height: 14px; background: rgba(0,0,0,0.6); border: 1px solid rgba(142,196,255,0.55); border-radius: 3px; overflow: hidden; }
+#armorbar b { display: block; height: 100%; width: 0; background: linear-gradient(#a8d4ff, #3a7ad8); transition: width .15s; }
+#armortext { min-width: 62px; text-align: right; font-size: 13px; font-weight: 800; color: #a8d4ff; text-shadow: 0 1px 2px #000; }
+#armorbar.empty .al, #armorbar.empty #armortext { color: #6a7a8a; }
 #inv { position: absolute; right: 28px; bottom: 170px; text-align: right; font-size: 14px; text-shadow: 0 1px 2px #000; color: #ddd; line-height: 1.6; }
 #inv .on { color: #40ff80; }
 #craft { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; width: min(460px, 90vw); }

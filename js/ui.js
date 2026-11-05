@@ -339,8 +339,10 @@ G.UI = (function () {
     setText('reserve', '/ ' + d.reserve);
     $('ammo').classList.toggle('low', typeof d.mag === 'number' && d.mag <= 3);
     setText('grenades', '💣 × ' + d.grenades + '   ⛨ × ' + d.plates);
-    const segs = $('armorbar').children;
+    const segs = $('armorbar').querySelectorAll('i');
     for (let i = 0; i < 3; i++) segs[i].firstChild.style.width = (G.clamp((d.armor - i * 50) / 50, 0, 1) * 100).toFixed(0) + '%';
+    setText('armortext', 'Armure ' + Math.ceil(d.armor));
+    $('armorbar').classList.toggle('empty', d.armor <= 0);
     setHTML('inv', (d.plateT > 0 ? '<div class="on">Plaque en cours…</div>' : '') + (d.crouch ? '<div>Accroupi</div>' : '') +
       '<div class="' + (d.buildItem === 'barricade' ? 'on' : '') + '">🧱 Barricade × ' + d.builds.barricade + '</div>' +
       '<div class="' + (d.buildItem === 'shield' ? 'on' : '') + '">🛡 Bouclier × ' + d.builds.shield + '</div>' +

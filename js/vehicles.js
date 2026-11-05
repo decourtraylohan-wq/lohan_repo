@@ -27,7 +27,7 @@ G.Vehicle = class {
     const g = new THREE.Group();
     const paint = new THREE.MeshPhongMaterial({ color: this.color, shininess: 70, specular: 0x555555 });
     const dark = new THREE.MeshLambertMaterial({ color: 0x1c1c1e });
-    const glass = new THREE.MeshPhongMaterial({ color: 0x2a3a48, shininess: 100, specular: 0x8899aa, transparent: true, opacity: 0.75 });
+    const glass = new THREE.MeshPhongMaterial({ color: 0x3a4a58, shininess: 100, specular: 0x8899aa, transparent: true, opacity: 0.5, depthWrite: false });
     const chrome = new THREE.MeshPhongMaterial({ color: 0xb0b4b8, shininess: 100 });
     const lightF = new THREE.MeshBasicMaterial({ color: 0xfff2c0 }), lightR = new THREE.MeshBasicMaterial({ color: 0xb01010 });
     this.mats = [paint, dark, glass, chrome, lightF, lightR];
@@ -42,6 +42,20 @@ G.Vehicle = class {
     box(W + 0.04, 0.2, 0.16, dark, 0, 0.45, L / 2); box(W + 0.04, 0.2, 0.16, dark, 0, 0.45, -L / 2);
     box(W * 0.5, 0.14, 0.04, chrome, 0, 0.7, L / 2 + 0.01);
     for (const sx of [-1, 1]) { box(0.36, 0.14, 0.04, lightF, sx * 0.68, 0.76, L / 2 + 0.02); box(0.32, 0.14, 0.04, lightR, sx * 0.7, 0.8, -L / 2 - 0.02); box(0.14, 0.1, 0.18, dark, sx * (W / 2 + 0.06), 1.0, L * 0.18); }
+    // conducteur : notre personnage, visible quand on prend le volant (veste kaki, gants, casquette)
+    const drv = new THREE.Group(), DX = -0.45;
+    const jacket = new THREE.MeshLambertMaterial({ color: 0x5a6a48 }), skin = new THREE.MeshLambertMaterial({ color: 0xd8a880 });
+    const glove = new THREE.MeshLambertMaterial({ color: 0x2a2a2a }), cap = new THREE.MeshLambertMaterial({ color: 0x3a4030 }), shades = new THREE.MeshLambertMaterial({ color: 0x101214 });
+    this.mats.push(jacket, skin, glove, cap, shades);
+    const part = (sx, sy, sz, m, x, y, z, rx = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m); b.position.set(x, y, z); b.rotation.x = rx; drv.add(b); return b; };
+    part(0.42, 0.4, 0.26, jacket, DX, 0.98, -0.28);                 // buste
+    part(0.4, 0.14, 0.42, cap, DX, 0.82, -0.1);                     // jambes (assis)
+    part(0.26, 0.26, 0.26, skin, DX, 1.3, -0.3);                    // tête
+    part(0.28, 0.07, 0.3, cap, DX, 1.45, -0.28); part(0.28, 0.03, 0.1, cap, DX, 1.43, -0.11); // casquette + visière
+    part(0.2, 0.05, 0.02, shades, DX, 1.33, -0.165);                // lunettes
+    for (const sx of [-1, 1]) { part(0.1, 0.1, 0.34, jacket, DX + sx * 0.25, 1.06, -0.12, -0.35); part(0.08, 0.08, 0.08, glove, DX + sx * 0.16, 1.04, 0.07); }
+    const sw = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.025, 6, 14), glove); sw.position.set(DX, 1.04, 0.12); sw.rotation.x = -0.5; drv.add(sw);
+    drv.visible = false; g.add(drv); this.driver = drv; this.steeringWheel = sw;
     this.wheels = [];
     const wGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.26, 10); wGeo.rotateZ(Math.PI / 2);
     const rGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.28, 8); rGeo.rotateZ(Math.PI / 2);
@@ -78,6 +92,13 @@ G.Vehicle = class {
   blockedAt(p, yaw) {
     const w = this.game.world;
     const pts = this.footprint(p, yaw, true);
+    const game = this.game, bordered = game.borderR !== undefined && game.borderR < game.borderFull - 0.5;
+    if (bordered) {
+      // limite de zone : mur invisible pour les voitures aussi (on peut toujours revenir vers l'intérieur)
+      const c = game.borderC, R = game.borderR - 0.3, out = (q) => Math.max(Math.abs(q.x - c.x), Math.abs(q.z - c.y)) - R;
+      const old = this.footprint(this.pos, this.yaw, true);
+      for (let i = 0; i < pts.length; i++) { const o = out(pts[i]); if (o > 0 && o > out(old[i]) + 1e-3) return true; }
+    }
     for (const q of pts) {
       const x = Math.floor(q.x), z = Math.floor(q.z);
       if (w.isSolid(x, Math.floor(p.y + 0.5), z) || w.isSolid(x, Math.floor(p.y + 1.2), z)) return true;
@@ -114,6 +135,7 @@ G.Vehicle = class {
     const sub = Math.max(1, Math.ceil(Math.abs(this.speed) * dt / 0.3));
     for (let si = 0; si < sub && this.speed !== 0; si++) this.step(dt / sub);
     this.wheelRot += this.speed * dt / 0.36;
+    if (this.driver) { this.driver.visible = game.player.vehicle === this; this.steeringWheel.rotation.z = this.steer * 1.4; }
     for (const wh of this.wheels) { wh.t.rotation.x = this.wheelRot; wh.r.rotation.x = this.wheelRot; wh.piv.rotation.y = wh.front ? this.steer * 0.45 : 0; }
     this.syncMesh();
     this.updateSolid();
@@ -162,6 +184,7 @@ G.Vehicle = class {
   explode() {
     if (this.dead) return;
     this.dead = true; this.burnT = 10; this.speed = 0;
+    if (this.driver) this.driver.visible = false;
     const game = this.game;
     if (game.player.vehicle === this) game.exitVehicle(true);
     for (const m of this.mats) { if (m.color) m.color.setHex(0x1e1c1a); if (m.opacity !== undefined) m.opacity = 1; }

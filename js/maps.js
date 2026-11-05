@@ -453,7 +453,8 @@ G.Maps = (function () {
       w.set(x, g, z, Math.abs(d - 5.6) < 0.55 || (Math.abs(x - cx) <= 0 || Math.abs(z - cz) <= 0) && d > 3.9 ? B.STONEBRICK : (x * 7 + z * 3) % 5 === 0 ? B.GRAVEL : B.COBBLE);
       if (d < 3.9) {
         if (d < 1.5) continue;
-        if (d < 2.9) w.set(x, g, z, B.WATER); else w.set(x, g + 1, z, B.LIMESTONE);
+        // bassin peu profond : fond au niveau du sol, l'eau affleure sous la margelle (on en ressort d'un pas)
+        if (d < 2.9) { w.set(x, g, z, B.STONEBRICK); w.set(x, g + 1, z, B.WATER); } else w.set(x, g + 1, z, B.LIMESTONE);
       }
     }
     // socle et statue

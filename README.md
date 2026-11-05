@@ -14,9 +14,9 @@ puis va sur http://localhost:8000.
 
 ## Contenu
 
-- **Mode Histoire : « Protocole Cendre »** (5 chapitres, un par carte). Vous êtes Sacha « Vex » Varenne, ancien commando devenu nettoyeur. Opale, une commanditaire qui ne parle qu'à la radio, vous envoie retrouver un virologue disparu. Derrière lui : ORBIS, la milice privée du général Kessler, une spore exhumée sous la pyramide du désert et une épidémie. Au programme : fouiller une maison au milieu des morts, saboter des foreuses, éliminer un colonel posté sur un mirador puis fuir par la mine, pirater un terminal et le défendre, libérer le docteur sous les combles d'un immeuble haussmannien, survivre à une trahison et abattre le général Kessler sur la place. Les objectifs s'affichent en haut à gauche, un losange jaune indique où aller, et les dialogues radio sont sous-titrés et lus à voix haute. Chaque chapitre se note sur trois étoiles et débloque le suivant.
+- **Mode Histoire : « Protocole Cendre »** (5 chapitres, un par carte). Vous êtes Sacha « Vex » Varenne, ancien commando devenu nettoyeur. Opale, une commanditaire qui ne parle qu'à la radio, vous envoie retrouver un virologue disparu. Derrière lui : ORBIS, la milice privée du général Kessler, une spore exhumée sous la pyramide du désert et une épidémie. Au programme : fouiller une maison au milieu des morts, saboter des foreuses, éliminer un colonel posté sur un mirador puis fuir par la mine, pirater un terminal et le défendre, libérer le docteur sous les combles d'un immeuble haussmannien, survivre à une trahison et abattre le général Kessler sur la place. Les objectifs s'affichent en haut à gauche, un losange jaune indique où aller, et les dialogues radio sont sous-titrés et lus à voix haute. Chaque chapitre se note sur trois étoiles et débloque le suivant. Les renforts arrivent par petites vagues, loin du joueur et hors de sa vue, avec un répit entre deux vagues.
 - **Mode Missions** : six contrats rejouables tirés de l'histoire (survie, sabotage contre la montre, assassinat, défense, exfiltration à travers la ville, chasse aux tireurs d'élite), débloqués au fil des chapitres, avec trois étoiles et un record de temps.
-- **Mode Infini** : la survie par vagues d'origine.
+- **Mode Infini** : la survie par vagues d'origine. En mode Soldats, chaque touche et chaque élimination rapportent au moins deux fois plus de points qu'en mode Zombies (ennemis moins nombreux et plus coriaces). La zone de combat vaut pour tout le monde : joueur, voitures et ennemis, qui n'y cherchent ni abri ni chemin au-dehors.
 - **2 types de partie**, à choisir avant de lancer :
   - **Zombies** : des hordes et des boss monstrueux.
   - **Soldats** : des escouades armées qui tirent en rafales, se déplacent, lancent des grenades et utilisent des fusils de précision à laser.
@@ -38,7 +38,7 @@ puis va sur http://localhost:8000.
   - occlusion ambiante, végétation (herbes hautes, fleurs, blé).
 - **Sons synthétisés** : détonations en plusieurs couches, réverbération, sons spatialisés (gauche/droite et distance), sifflement des balles qui vous ratent, ambiance par carte, battements de cœur quand la vie est basse.
 - **Déplacements** : sprint, glissade (C pendant un sprint), accroupi (C maintenu, plus précis et plus dur à toucher), couteau avec fente et coup fatal dans le dos (V ou clic molette).
-- **Armure** : 3 plaques de 50 qui absorbent 75 % des dégâts (touche X pour en mettre une).
+- **Armure** : 3 plaques de 50 qui absorbent 75 % des dégâts (touche X pour en mettre une). Une barre bleue au-dessus de la vie indique où elle en est.
 - **Constructions** : à fabriquer avec des points aux établis ⚒ placés dans les maisons, puis à poser avec B et un clic.
   - barricade de sacs de sable : abri bas derrière lequel s'accroupir ;
   - bouclier énergétique : arrête les balles ennemies mais laisse passer les vôtres.
@@ -46,7 +46,7 @@ puis va sur http://localhost:8000.
   Chacune a une durabilité ; les zombies la frappent et les soldats tirent dessus.
 - **Soldats plus tactiques** : ils cherchent un abri d'où ils peuvent tirer, s'y accroupissent, se relèvent pour tirer, rechargent à couvert, courent d'abri en abri, se déplacent en escouades et lancent des grenades pour vous déloger.
 - **Mode triche**, à cocher avant de lancer : vague de départ, points, armes, atouts, invincibilité, munitions infinies et spectateur. En jeu, K passe la vague, L donne +10 000 points et T active le spectateur (vol libre sans ennemis). Ces parties ne sont pas enregistrées.
-- **Voitures conduisibles** (Ville) : E pour monter ou descendre, ZQSD pour conduire. Elles écrasent les ennemis, encaissent les tirs, puis prennent feu et explosent.
+- **Voitures conduisibles** (Ville) : E pour monter ou descendre, ZQSD pour conduire. On voit son personnage au volant. Elles écrasent les ennemis, encaissent les tirs, puis prennent feu et explosent. Les zombies attaquent la voiture au contact ; les soldats s'écartent de sa trajectoire et la criblent de balles. Elles restent dans la zone de combat.
 - **Verre cassable** : tirer à travers une vitre la brise.
 - **Désert** : une pyramide au sommet du canyon abrite un portail qui mène au tombeau souterrain (et inversement). Son socle est une mesa au contour irrégulier ; un sentier de pierre serpente sur un éperon rocheux jusqu'au sable, et un autre redescend vers l'ouest. Une gorge naturelle, avec une arche de roche, traverse la montagne depuis la crevasse derrière la pyramide jusqu'au coin nord-ouest.
 - **Zone de combat** qui s'agrandit à chaque vague : elle couvre toute la carte à la vague 5 en Zombies et à la vague 3 en Soldats. Il y a 30 secondes de préparation entre les vagues (N pour lancer plus tôt).

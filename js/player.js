@@ -349,7 +349,9 @@ G.Player = class {
     if (!this.keys.ShiftLeft) this.camOrbit *= Math.max(0, 1 - dt * 1.5);
     const a = v.yaw + Math.PI + this.camOrbit;
     const target = v.pos.clone().add(new THREE.Vector3(0, 1.3, 0));
-    const want = target.clone().add(new THREE.Vector3(Math.sin(a) * 7.5, 2.6, Math.cos(a) * 7.5));
+    const want = target.clone().add(new THREE.Vector3(Math.sin(a) * 7.2, 2.0, Math.cos(a) * 7.2));
+    // la caméra ne traverse pas les murs : on la rapproche si un bloc est entre la voiture et elle
+    { const d = want.clone().sub(target), L = d.length(); d.normalize(); const hit = this.game.world.raycast(target.x, target.y, target.z, d.x, d.y, d.z, L); if (hit && hit.dist < L) want.copy(target).addScaledVector(d, Math.max(1.2, hit.dist - 0.35)); }
     if (!this._camPos) this._camPos = want.clone();
     this._camPos.lerp(want, Math.min(1, dt * 6));
     cam.position.copy(this._camPos);

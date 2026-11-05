@@ -409,7 +409,7 @@ G.World = class {
     const L = Math.hypot(dx, dy, dz);
     if (L < 0.01) return true;
     if (this.raycast(a.x, a.y, a.z, dx / L, dy / L, dz / L, L)) return false;
-    if (this.solids.length && this.solidOnRay(a, { x: dx / L, y: dy / L, z: dz / L }, L, (s) => s.opaque)) return false;
+    if (this.solids.length && this.solidOnRay(a, { x: dx / L, y: dy / L, z: dz / L }, L, (s) => s.opaque && s !== this.losIgnore)) return false;
     return true;
   }
 
@@ -584,12 +584,14 @@ G.World = class {
       if (start < 0) return;
     }
     const q = n.queue; let qh = 0, qt = 0;
+    const fb = this.flowBounds;
     n.dist[start] = 0; q[qt++] = start;
     while (qh < qt) {
       const c = q[qh++], cd = n.dist[c] + 1;
       for (let k = n.inStart[c]; k < n.inStart[c + 1]; k++) {
         const a = n.inList[k];
         if (n.dist[a] !== -1 || n.blocked[a] > 0) continue;
+        if (fb && (Math.abs(n.nx[a] + 0.5 - fb.x) > fb.R || Math.abs(n.nz[a] + 0.5 - fb.z) > fb.R)) continue; // hors de la zone de combat
         n.dist[a] = cd; q[qt++] = a;
       }
     }
@@ -605,9 +607,9 @@ G.World = class {
     return ids;
   }
   fieldTo(target) {
-    const n = this.nav, dist = new Int32Array(n.N).fill(-1), q = n.queue;
+    const n = this.nav, dist = new Int32Array(n.N).fill(-1), q = n.queue, fb = this.flowBounds;
     let qh = 0, qt = 0; dist[target] = 0; q[qt++] = target;
-    while (qh < qt) { const c = q[qh++], cd = dist[c] + 1; for (let k = n.inStart[c]; k < n.inStart[c + 1]; k++) { const a = n.inList[k]; if (dist[a] !== -1 || n.blocked[a] > 0) continue; dist[a] = cd; q[qt++] = a; } }
+    while (qh < qt) { const c = q[qh++], cd = dist[c] + 1; for (let k = n.inStart[c]; k < n.inStart[c + 1]; k++) { const a = n.inList[k]; if (dist[a] !== -1 || n.blocked[a] > 0) continue; if (fb && (Math.abs(n.nx[a] + 0.5 - fb.x) > fb.R || Math.abs(n.nz[a] + 0.5 - fb.z) > fb.R)) continue; dist[a] = cd; q[qt++] = a; } }
     return dist;
   }
   nextStepField(x, y, z, field) {

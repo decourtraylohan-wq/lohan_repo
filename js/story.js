@@ -200,7 +200,7 @@ G.MissionRun = class {
     if (this.step) this.clearProps();
     this.idx++;
     this.step = this.def.steps[this.idx] || null;
-    this.t = 0; this.stepKills = 0; this.pressureT = 4;
+    this.t = 0; this.stepKills = 0; this.pressureT = this.kind === 'story' ? 10 : 5; this.burst = 0;
     if (!this.step) { this.finish(true); return; }
     const s = this.step;
     s.state = {};
@@ -258,7 +258,7 @@ G.MissionRun = class {
       if (!hidden || !w.lineOfSight(new THREE.Vector3(p.x, y + 1.6, p.z), pl.eye)) return p;
       fallback = fallback || p;
     }
-    return fallback || g.pickSpawn(12, 30);
+    return fallback || g.pickSpawn(Math.min(r0, 24), Math.max(40, r1));
   }
   spawnGroup(sp, step) {
     const g = this.game, group = [];
@@ -277,13 +277,20 @@ G.MissionRun = class {
     let r = Math.random() * tot; for (const [t, wgt] of list) { r -= wgt; if (r <= 0) return t; }
     return list[0][0];
   }
+  // renforts : en Histoire, par vagues courtes suivies d'un répit, et toujours loin du joueur
   pressure(dt, P) {
-    const g = this.game;
+    const g = this.game, story = this.kind === 'story';
+    const max = story ? Math.max(4, Math.round(P.max * 0.7)) : P.max;
     this.pressureT -= dt;
-    if (this.pressureT > 0 || g.aliveCount() >= P.max) return;
-    this.pressureT = P.every[0] + Math.random() * (P.every[1] - P.every[0]);
-    const n = P.squad ? Math.min(P.max - g.aliveCount(), P.squad[0] + Math.floor(Math.random() * (P.squad[1] - P.squad[0] + 1))) : 1;
-    const c = this.spawnPoint(g.player.pos, P.r[0], P.r[1], true); if (!c) return;
+    if (this.pressureT > 0 || g.aliveCount() >= max) return;
+    this.pressureT = (P.every[0] + Math.random() * (P.every[1] - P.every[0])) * (story ? 1.3 : 1);
+    const n = P.squad ? Math.min(max - g.aliveCount(), P.squad[0] + Math.floor(Math.random() * (P.squad[1] - P.squad[0] + 1))) : 1;
+    // fin d'une vague de renforts : répit avant la suivante (plus long en Histoire)
+    this.burst = (this.burst || 0) + n;
+    const burstSize = P.squad ? (story ? 5 : 8) : (story ? 7 : 12);
+    if (this.burst >= burstSize) { this.burst = 0; this.pressureT = story ? (P.squad ? G.rand(16, 22) : G.rand(10, 14)) : G.rand(5, 8); }
+    const r0 = Math.max(P.r[0], story ? 28 : 20), r1 = Math.max(P.r[1], r0 + 18);
+    const c = this.spawnPoint(g.player.pos, r0, r1, true); if (!c) return;
     const group = [];
     for (let i = 0; i < n; i++) {
       const q = c.clone().add(new THREE.Vector3((i % 2) * 1.2 - 0.6, 0, Math.floor(i / 2) * 1.2));

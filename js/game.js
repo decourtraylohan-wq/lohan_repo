@@ -451,6 +451,8 @@ G.Game = class {
     // champ de flux
     this.flowT -= dt;
     if (this.flowT <= 0) {
+      // les ennemis ne cherchent pas de chemin hors de la zone de combat
+      this.world.flowBounds = this.borderR !== undefined && this.borderR < this.borderFull - 0.5 ? { x: this.borderC.x, z: this.borderC.y, R: this.borderR - 0.6 } : null;
       this.flowT = 0.25; this.world.computeFlow(pl.pos.x, pl.pos.y, pl.pos.z);
       if (this.enemies.some((e) => e.big && !e.dead)) this.world.computeFlowBig(pl.pos.x, pl.pos.y, pl.pos.z);
     }
@@ -461,6 +463,8 @@ G.Game = class {
       const w = this.world, ground = w.standAt(Math.floor(pl.pos.x), Math.floor(pl.pos.z));
       this.playerUp = !pl.vehicle && ground < 999 && pl.pos.y - ground > 3.5;
     }
+    // la voiture du joueur ne cache pas le joueur aux ennemis : ils la voient et lui tirent dessus
+    this.world.losIgnore = pl.vehicle && !pl.vehicle.dead ? pl.vehicle.solid : null;
     this.updateBorder(dt);
     this.updateWater(dt);
     G.Audio.setListener(pl.eye.x, pl.eye.y, pl.eye.z, pl.yaw);
@@ -798,7 +802,7 @@ G.Game = class {
     const before = e.hp;
     const dealt = e.damage(dmg, part, src);
     this.stats.dmgDealt += Math.max(0, Math.min(before, dealt));
-    if (!e.dead && (src === 'gun' || src === 'melee' || src === 'energy')) this.addPoints(10);
+    if (!e.dead && (src === 'gun' || src === 'melee' || src === 'energy')) this.addPoints(this.gameType === 'soldats' ? 20 : 10);
     G.UI.hitmarker(e.dead, part === 'head');
     if (part === 'head') G.Audio.S.headshot(); else G.Audio.S.hit();
   }
@@ -810,6 +814,7 @@ G.Game = class {
     if (part === 'head') { this.stats.headshots++; this.curWave.hs++; }
     if (!['walker', 'minion', 'rifleman'].includes(e.type)) { this.stats.specials++; this.curWave.specials++; }
     let pts = e.isBoss ? e.T.pts : src === 'melee' ? 130 : part === 'head' ? 100 : e.T.pts;
+    if (this.gameType === 'soldats' && !e.isBoss) pts = Math.round(pts * 2.2); // moins d'ennemis, plus coriaces : ils rapportent bien plus
     if (src === 'nuke') pts = 0;
     if (pts) this.addPoints(pts, part === 'head' ? 'TÊTE' : src === 'melee' ? 'COUTEAU' : null);
     G.Audio.S.kill();
