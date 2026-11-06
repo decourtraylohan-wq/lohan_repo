@@ -305,7 +305,7 @@ G.Game = class {
       if (ws.length) { pl.slots = ws.slice(0, pl.maxSlots).map((id) => pl.newSlot(id, !!c.upgraded)); pl.cur = 0; pl.setViewWeapon(); }
       pl.plates = 5; pl.armor = 150; pl.builds = { barricade: 4, shield: 3 }; pl.grenades = 4;
     }
-    this.coopFinal = false;
+    this.coopFinal = false; this.vs = null;
     if (this.coop && this.coop.code && !this.coop.started) this.coop.leave();
     G.UI.showHUD(true);
     if (this.coop && this.coop.active) { this.coop.onGameStart(); this.lockPointer(); return; }
@@ -487,7 +487,7 @@ G.Game = class {
       if (danger > 0 && !pl.dead && this.beatT <= 0) { this.beatT = G.lerp(1.15, 0.42, danger); G.Audio.S.heartbeat(0.35 + danger * 1.1); G.UI._beat = 1; }
     }
 
-    if (this.campaign) this.campaign.update(dt); else if (!(this.coop && this.coop.isClient)) this.updateWaves(dt);
+    if (this.campaign) this.campaign.update(dt); else if (!(this.coop && this.coop.isClient) && !this.vs) this.updateWaves(dt);
     // ennemis
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
@@ -826,6 +826,7 @@ G.Game = class {
   }
   damageEnemy(e, dmg, part, src) {
     if (e.dead) return;
+    if (e.avatar) { if (this.vs && this.coop) this.coop.vsHit(e, dmg, part, src); return; } // VS : adversaire humain
     if (this.coop && this.coop.isClient && e.puppet) {
       // invité : la touche est envoyée à l'hôte, qui l'applique
       this.coop.claimHit(e, dmg, part, src);
@@ -941,6 +942,19 @@ G.Game = class {
   gameOver(reason) {
     if (this.phase === 'over' || this.phase === 'menu') return;
     if (this.campaign) { this.campaign.fail(reason || 'death'); return; }
+    // VS : on réapparaît ; la manche ne s'arrête que sur décision de l'hôte (score, temps) ou abandon
+    if (this.vs && this.coop) {
+      if (reason === 'abandon' && this.coop.isHost && !this.coopFinal) { this.coop.vsFinish('', 2); return; }
+      if (reason !== 'abandon' && !this.coopFinal) { this.coop.vsDied(); return; }
+      this.phase = 'over';
+      this.player.dead = true; this.coop.publish();
+      if (document.pointerLockElement) document.exitPointerLock();
+      G.UI.showHUD(false);
+      const sum = this.coop.vsSummary(reason);
+      if (sum.res === 'win') G.Audio.S.rankUp(); else G.Audio.S.playerDeath();
+      setTimeout(() => G.UI.showVsOver(sum), 300);
+      return;
+    }
     // coop : on tombe « à terre » tant qu'un équipier tient debout ; l'hôte termine la partie quand tout le monde est à terre
     if (this.coop && this.coop.active && reason !== 'abandon') {
       if (this.coop.isClient && !this.coopFinal) { this.coop.downed(); return; }
@@ -998,7 +1012,7 @@ G.Game = class {
       const amt = (self ? 0.15 : 1) * (src === 'bloater' || src === 'enemy' ? dmg : dmg * 0.4) * (1 - pd / r * 0.5);
       if (amt > 1) this.damagePlayer(amt, { pos });
     }
-    if (this.coop && this.coop.isHost && src !== 'player') for (const o of this.coop.others.values()) {
+    if (this.coop && this.coop.isHost && !this.vs && src !== 'player') for (const o of this.coop.others.values()) {
       const P = o.proxy; if (P.dead) continue;
       const d = P.pos.clone().add(new THREE.Vector3(0, 0.9, 0)).distanceTo(pos);
       if (d < r) this.hurt(P, (src === 'bloater' || src === 'enemy' ? dmg : dmg * 0.4) * (1 - d / r * 0.5), { pos });
@@ -1643,12 +1657,13 @@ G.Game = class {
     const mi = this.campaign ? this.campaign.hud() : null;
     G.UI.updateObjective(mi, this.camera);
     G.UI.updateHUD({
-      points: this.points, wave: this.campaign ? '' : this.wave, hp: pl.hp, maxHp: pl.maxHp,
+      points: this.points, wave: this.campaign || this.vs ? '' : this.wave, hp: pl.hp, maxHp: pl.maxHp,
       weapon: st.name, mag: this.power.fury > 0 ? '∞' : s.mag, reserve: s.reserve, reloading: pl.reloadT > 0,
       grenades: pl.grenades, armor: pl.armor, maxArmor: pl.maxArmor, plates: pl.plates, plateT: pl.plateT, builds: pl.builds, buildItem: this.buildItem, crouch: pl.crouch, cheats: !!this.cheats, perks: [...pl.perks], power: this.power,
       prompt: mi && mi.prompt ? mi.prompt : pl.vehicle ? 'Véhicule ' + Math.max(0, Math.round(pl.vehicle.hp / pl.vehicle.maxHp * 100)) + ' % — [ZQSD] conduire · [Espace] frein · [E] sortir' : pl.spectator ? 'SPECTATEUR — [T] quitter' : near ? this.stationPrompt(near) : this.nearestVehicle() ? '[E] Conduire le véhicule' : (this.phase === 'intermission' && this.wave > 0 ? 'Vague suivante dans ' + Math.ceil(this.phaseT) + ' s' + (this.coop && this.coop.isClient ? '' : ' — [N] pour lancer') : ''),
       boss: this.boss && !this.boss.dead ? { name: this.boss.T.name, hp: this.boss.hp / this.boss.maxHp, stunned: this.boss.state === 'stunned' } : null,
-      left: this.campaign ? 0 : this.phase === 'active' ? this.toSpawn + this.aliveCount() : 0,
+      left: this.campaign || this.vs ? 0 : this.phase === 'active' ? this.toSpawn + this.aliveCount() : 0,
+      vs: this.vs && this.coop ? this.coop.vsHud() : null,
       ads: pl.ads, sprint: pl.sprinting, stamina: pl.stamina, slots: pl.slots.map((x, i) => ({ name: G.weaponStats(x).name, cur: i === pl.cur })),
       team: this.coop && this.coop.active ? this.coop.team() : null,
     });
@@ -1674,11 +1689,13 @@ G.Game = class {
     for (const p of this.powerups) { ctx.fillStyle = '#ffff60'; ctx.beginPath(); ctx.arc(tx(p.g.position.x), tz(p.g.position.z), 3.5, 0, Math.PI * 2); ctx.fill(); }
     for (const e of this.enemies) {
       if (e.dead) continue;
+      if (e.avatar && !(e.vsSeen > this.time)) continue; // VS : un adversaire n'apparaît que quand il tire
       ctx.fillStyle = e.isBoss ? '#ff40ff' : e.elite ? '#ffffff' : '#ff3030';
       const r = e.isBoss ? 5 : 2.5;
       ctx.beginPath(); ctx.arc(tx(e.pos.x), tz(e.pos.z), r, 0, Math.PI * 2); ctx.fill();
     }
     if (this.coop && this.coop.active) for (const o of this.coop.others.values()) {
+      if (o.enemy) continue;
       ctx.fillStyle = o.proxy.dead ? '#777' : '#' + o.color.toString(16).padStart(6, '0');
       ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(tx(o.proxy.pos.x), tz(o.proxy.pos.z), 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();

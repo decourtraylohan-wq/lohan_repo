@@ -1,6 +1,11 @@
 // Coop en ligne (jusqu'à 4 joueurs) via le salon temps réel de la page (capacité « room » de claude.ai).
 // Chaque joueur publie sa « présence » : l'hôte y met l'état du monde (vagues, ennemis, dégâts infligés aux autres),
 // les invités y mettent leur position et leurs tirs. L'hôte simule tout ; les invités affichent des marionnettes.
+G.VS_MODES = {
+  '1v1': { name: '1 contre 1', max: 2, limit: 10, time: 480, zone: 24, goal: 'Premier à 10 éliminations' },
+  ffa: { name: 'Chacun pour soi', max: 4, limit: 15, time: 600, zone: 32, goal: 'Premier à 15 éliminations' },
+  '2v2': { name: '2 contre 2', max: 4, limit: 20, time: 600, zone: 32, goal: 'Première équipe à 20 éliminations' },
+};
 G.Coop = class {
   constructor(game) {
     this.game = game;
@@ -56,49 +61,65 @@ G.Coop = class {
     for (const p of this.peers) {
       const pr = p.presence || {};
       if (pr.role !== 'host' || !pr.g || !pr.lb || p.sameTab) continue;
-      out.push({ code: String(pr.g), host: String(pr.nick || 'Hôte').slice(0, 16), map: pr.lb.m, type: pr.lb.t, started: !!pr.lb.st, players: this.members(pr.g).length });
+      out.push({ code: String(pr.g), host: String(pr.nick || 'Hôte').slice(0, 16), map: pr.lb.m, type: pr.lb.t, vs: G.VS_MODES[pr.lb.vs] ? pr.lb.vs : null, started: !!pr.lb.st, players: this.members(pr.g).length });
     }
     return out;
   }
   members(code) { return this.peers.filter((p) => p.presence && p.presence.g === code); }
   hostPeer() { return this.peers.find((p) => p.presence && p.presence.g === this.code && p.presence.role === 'host' && !p.sameTab); }
-  create(mapId, type) {
+  // vs : null (coop contre les vagues) | '1v1' | 'ffa' (chacun pour soi) | '2v2'
+  create(mapId, type, vs) {
     const abc = 'abcdefghjkmnpqrstuvwxyz23456789';
     this.code = Array.from({ length: 4 }, () => abc[Math.floor(Math.random() * abc.length)]).join('');
     this.role = 'host'; this.mapId = mapId; this.type = type; this.started = false;
-    this.push({ nick: this.nick(), g: this.code, role: 'host', lb: { m: mapId, t: type, st: 0 } });
+    this.vs = G.VS_MODES[vs] ? vs : null; this.myTeam = this.vs === '2v2' ? 0 : null;
+    this.push({ nick: this.nick(), g: this.code, role: 'host', lb: this.lobbyInfo(0), tm: this.myTeam, vs: null, sc: null });
     this.changed();
   }
+  lobbyInfo(st) { return { m: this.mapId, t: this.type, st, vs: this.vs }; }
+  maxPlayers(vs) { return vs && G.VS_MODES[vs] ? G.VS_MODES[vs].max : 4; }
+  // 2v2 : on rejoint l'équipe la moins remplie, puis on peut changer
+  ensureTeam() {
+    if (!this.code || this.vs !== '2v2') { if (this.myTeam != null && this.vs !== '2v2') { this.myTeam = null; this.push({ tm: null }); } return; }
+    if (this.myTeam != null) return;
+    const n = [0, 0]; for (const p of this.members(this.code)) if (!p.sameTab && (p.presence.tm === 0 || p.presence.tm === 1)) n[p.presence.tm]++;
+    this.myTeam = n[0] <= n[1] ? 0 : 1; this.push({ tm: this.myTeam }); this.changed();
+  }
+  switchTeam() { if (this.vs !== '2v2' || this.started) return; this.myTeam = this.myTeam === 0 ? 1 : 0; this.push({ tm: this.myTeam }); this.changed(); }
   join(code) {
     code = String(code || '').trim().toLowerCase();
     if (!code) return false;
-    this.code = code; this.role = 'client'; this.started = false;
-    this.push({ nick: this.nick(), g: code, role: 'client', lb: null });
+    this.code = code; this.role = 'client'; this.started = false; this.vs = null; this.myTeam = null;
+    this.push({ nick: this.nick(), g: code, role: 'client', lb: null, tm: null, vs: null, sc: null });
     this.changed();
     return true;
   }
   launch() {
     if (this.role !== 'host') return;
     this.started = true;
-    this.push({ lb: { m: this.mapId, t: this.type, st: 1 } });
+    this.push({ lb: this.lobbyInfo(1), vs: null });
     this.game.start(this.mapId, 'classic', this.type, null);
   }
   // l'invité démarre quand l'hôte a lancé la partie (ou la rejoint en cours)
   pollLobby() {
-    if (this.role !== 'client' || this.started) return;
-    const h = this.hostPeer();
-    if (h && h.presence.lb && h.presence.lb.st && !(h.presence.s && h.presence.s.ph === 'o')) {
-      this.mapId = h.presence.lb.m; this.type = h.presence.lb.t; this.started = true;
-      this.game.start(this.mapId, 'classic', this.type, null);
-    }
+    if (!this.code || this.started) return;
+    if (this.role === 'client') {
+      const h = this.hostPeer(), lb = h && h.presence.lb;
+      if (lb) { const vs = G.VS_MODES[lb.vs] ? lb.vs : null; if (vs !== this.vs) { this.vs = vs; this.myTeam = null; if (!vs) this.push({ tm: null }); this.changed(); } }
+      this.ensureTeam();
+      if (lb && lb.st && !(h.presence.s && h.presence.s.ph === 'o') && !(Array.isArray(h.presence.vs) && h.presence.vs[1])) {
+        this.mapId = lb.m; this.type = lb.t; this.started = true;
+        this.game.start(this.mapId, 'classic', this.type, null);
+      }
+    } else this.ensureTeam();
   }
   leave() {
     for (const o of this.others.values()) this.removeOther(o);
     this.others.clear(); this.clearPuppets();
-    this.code = null; this.role = null; this.started = false;
+    this.code = null; this.role = null; this.started = false; this.vs = null; this.myTeam = null;
     this.hOut = []; this.xOut = []; this.dOut = []; this.kOut = []; this.fxOut = []; this.shOut = []; this.peOut = []; this.pkOut = [];
     this.last = { d: 0, k: 0, fx: 0, sh: 0, w: 0, pe: 0 };
-    this.push({ g: null, role: null, lb: null, me: null, s: null, h: null, x: null, car: null, wp: null, pk: null });
+    this.push({ g: null, role: null, lb: null, me: null, s: null, h: null, x: null, car: null, wp: null, pk: null, tm: null, vs: null, sc: null, pv: null, dth: null });
     this.changed();
   }
   // fin de partie : on reste dans le salon pour relancer avec la même équipe
@@ -107,8 +128,8 @@ G.Coop = class {
     this.others.clear(); this.clearPuppets();
     this.started = false;
     this.hOut = []; this.xOut = []; this.dOut = []; this.kOut = []; this.shOut = []; this.peOut = []; this.pkOut = [];
-    if (this.role === 'host') this.push({ lb: { m: this.mapId, t: this.type, st: 0 }, s: null, me: null, x: null, car: null, wp: null });
-    else this.push({ me: null, h: null, x: null, pk: null, car: null, wp: null });
+    if (this.role === 'host') this.push({ lb: this.lobbyInfo(0), s: null, me: null, x: null, car: null, wp: null, vs: null, sc: null, pv: null, dth: null });
+    else this.push({ me: null, h: null, x: null, pk: null, car: null, wp: null, sc: null, pv: null, dth: null });
     this.changed();
   }
   dropPeer(peer) {
@@ -125,6 +146,7 @@ G.Coop = class {
     this.hOut = []; this.xOut = []; this.dOut = []; this.kOut = []; this.shOut = []; this.peOut = []; this.pkOut = [];
     this.last = { d: 0, k: 0, fx: 0, sh: 0, w: 0, pe: 0 };
     this.seq = 0; this.hostGoneT = 0;
+    if (this.vs) { this.vsStart(); return; }
     this.game.message(this.role === 'host' ? 'COOP — HÔTE' : 'COOP — INVITÉ', 'Partie ' + this.code.toUpperCase() + ' — ' + this.game.map.def.name + (this.role === 'host' ? '' : ' — cliquez dans l\'écran pour jouer'), 4);
   }
   update(dt) {
@@ -139,15 +161,16 @@ G.Coop = class {
       if (!o) { o = this.addOther(p); this.others.set(p.peer, o); }
       o.tag = String(p.presence.id || '').slice(0, 8);
       this.syncOther(o, p.presence, dt);
-      o.avatar.update(dt);
+      if (!o.enemy) o.avatar.update(dt); // les adversaires (VS) sont dans la liste des ennemis : déjà animés
     }
     for (const [peer, o] of this.others) if (!seen.has(peer)) { this.removeOther(o); this.others.delete(peer); }
-    if (this.isHost) this.hostTick(dt); else this.clientTick(dt);
+    if (this.vs) this.vsTick(dt);
+    else if (this.isHost) this.hostTick(dt); else this.clientTick(dt);
     // publication de notre état
     this.sendT -= dt;
     if (this.sendT <= 0) { this.sendT = this.isHost ? 1 / 12 : 1 / 15; this.publish(); }
     // fin de partie côté hôte : tout le monde à terre
-    if (this.isHost && g.phase === 'active' && pl.dead && this.allDead()) g.gameOver();
+    if (!this.vs && this.isHost && g.phase === 'active' && pl.dead && this.allDead()) g.gameOver();
   }
   publish() {
     const g = this.game, pl = g.player, r = (v) => Math.round(v * 100) / 100;
@@ -159,7 +182,10 @@ G.Coop = class {
       car: v ? [g.vehicles.indexOf(v), r(v.pos.x), r(v.pos.y), r(v.pos.z), r(v.yaw), Math.round(v.hp / v.maxHp * 100)] : 0,
     };
     patch.x = this.xOut.slice(-4);
-    if (this.isHost) {
+    if (this.vs) {
+      patch.sc = [this.score.k, this.score.d]; patch.pv = this.pvOut.slice(-16); patch.dth = this.dthOut.slice(-4);
+      if (this.isHost) patch.vs = this.vsState;
+    } else if (this.isHost) {
       // la présence entière doit tenir dans 4 Ko : on retire des ennemis (les plus lointains) si besoin
       const s = patch.s = this.snapshot();
       const size = () => JSON.stringify(Object.assign({}, this.mine, patch)).length;
@@ -173,20 +199,25 @@ G.Coop = class {
   // ---------- autres joueurs : avatar + (hôte) cible pour les ennemis ----------
   addOther(p) {
     const g = this.game, colors = [0x3a6ab0, 0xb08a2a, 0x8a3ab0, 0x2a9a7a];
-    const col = colors[[...this.others.keys()].length % colors.length];
-    const T = Object.assign({}, G.STYPES.rifleman, { shirt: col, pants: 0x2a2e36, skin: 0xd8a880, name: 'Équipier' });
+    const pr = p.presence || {}, team = pr.tm === 0 || pr.tm === 1 ? pr.tm : null;
+    const enemy = !!this.vs && !(this.vs === '2v2' && team === this.myTeam);
+    const col = this.vs === '2v2' ? (team === 1 ? 0xb03a2a : 0x3a6ab0) : enemy ? [0xb03a2a, 0xb08a2a, 0x8a3ab0, 0x2a9a7a][[...this.others.keys()].length % 4] : colors[[...this.others.keys()].length % colors.length];
+    const T = Object.assign({}, G.STYPES.rifleman, { shirt: col, pants: 0x2a2e36, skin: 0xd8a880, name: enemy ? 'Adversaire' : 'Équipier' });
     const pos = new THREE.Vector3(g.map.playerSpawn.x, g.map.playerSpawn.y, g.map.playerSpawn.z);
     const avatar = new G.Enemy(g, 'ally', pos, { T, avatar: true });
-    const tag = this.nameTag(String((p.presence && p.presence.nick) || 'Équipier').slice(0, 16), '#' + col.toString(16).padStart(6, '0'));
+    // adversaire : nom caché derrière les murs, et cible pour nos tirs (liste des ennemis)
+    const tag = this.nameTag(String(pr.nick || 'Équipier').slice(0, 16), enemy ? '#ff4a3a' : '#' + col.toString(16).padStart(6, '0'), !enemy);
     tag.position.set(0, 2.45, 0); avatar.mesh.add(tag);
+    if (enemy) { avatar.vsPeer = p.peer; g.enemies.push(avatar); }
     const proxy = {
       isRemote: true, peer: p.peer, nick: '', pos: pos.clone(), eye: pos.clone().add(new THREE.Vector3(0, 1.62, 0)), vel: new THREE.Vector3(),
       yaw: 0, pitch: 0, hp: 100, dead: false, up: false, vehicle: null, field: null, spectator: false,
       lookDir() { return new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ')); },
     };
-    return { peer: p.peer, avatar, tag, proxy, lastH: 0, lastX: 0, shotT: 0, color: col, carIdx: -1 };
+    const seqMax = (l) => (Array.isArray(l) ? l.reduce((m, x) => Math.max(m, Array.isArray(x) && Number.isFinite(x[0]) ? x[0] : 0), 0) : 0);
+    return { peer: p.peer, avatar, tag, proxy, lastH: 0, lastX: 0, shotT: 0, color: col, carIdx: -1, enemy, team, lastPv: seqMax(pr.pv), lastDth: seqMax(pr.dth), k: 0, d: 0 };
   }
-  nameTag(text, color) {
+  nameTag(text, color, through = true) {
     const c = document.createElement('canvas'); c.width = 256; c.height = 64;
     const ctx = c.getContext('2d');
     ctx.font = 'bold 30px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -195,11 +226,12 @@ G.Coop = class {
     ctx.fillStyle = color; ctx.fillRect(128 - w / 2, 48, w, 4);
     ctx.fillStyle = '#ffffff'; ctx.fillText(text, 128, 32);
     const t = new THREE.CanvasTexture(c);
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthWrite: false, depthTest: false, fog: false }));
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthWrite: false, depthTest: !through, fog: false }));
     s.scale.set(2.0, 0.5, 1); s.renderOrder = 10;
     return s;
   }
   removeOther(o) {
+    const i = this.game.enemies.indexOf(o.avatar); if (i >= 0) this.game.enemies.splice(i, 1);
     if (o.avatar) o.avatar.remove();
     if (o.carIdx >= 0) this.freeCar(o.carIdx);
   }
@@ -211,6 +243,7 @@ G.Coop = class {
   syncOther(o, pr, dt) {
     const g = this.game, me = pr.me;
     o.nick = String(pr.nick || 'Équipier').slice(0, 16); o.proxy.nick = o.nick;
+    if (Array.isArray(pr.sc)) { o.k = Math.max(0, Math.floor(+pr.sc[0] || 0)); o.d = Math.max(0, Math.floor(+pr.sc[1] || 0)); }
     if (!Array.isArray(me) || me.length < 7) return;
     const [x, y, z, yaw, pitch, fl, hp] = me.map(Number);
     if (![x, y, z, yaw, pitch].every(Number.isFinite)) return;
@@ -247,6 +280,7 @@ G.Coop = class {
     if ((fl & 4) && !dead && o.shotT <= 0) {
       const W = G.WEAPONS[pr.wp] || G.WEAPONS.rifle;
       o.shotT = Math.max(0.09, 60 / (W.rpm || 400));
+      o.avatar.vsSeen = g.time + 1.5; // un adversaire qui tire apparaît sur la minimap
       const dir = P.lookDir(), from = P.eye.clone().addScaledVector(dir, 0.6);
       const hit = g.world.raycast(from.x, from.y, from.z, dir.x, dir.y, dir.z, 60);
       g.tracer(from, from.clone().addScaledVector(dir, hit ? hit.dist : 60), 0xfff0b0);
@@ -489,8 +523,10 @@ G.Coop = class {
   }
   // caméra quand on est à terre : derrière un équipier vivant
   spectate(cam, dt) {
-    const o = this.aliveTeammate(), g = this.game;
-    const target = o ? o.proxy.pos.clone().add(new THREE.Vector3(0, 1.4, 0)) : g.player.pos.clone().add(new THREE.Vector3(0, 1.4, 0));
+    const g = this.game;
+    let o = this.vs ? (this.killerPeer && this.others.get(this.killerPeer)) : this.aliveTeammate();
+    if (o && o.proxy.dead) o = null;
+    const target = o ? o.proxy.pos.clone().add(new THREE.Vector3(0, 1.4, 0)) : (this.vs && this.deathPos ? this.deathPos.clone() : g.player.pos.clone()).add(new THREE.Vector3(0, 1.4, 0));
     this.specA = (this.specA || 0) + dt * 0.25;
     const want = target.clone().add(new THREE.Vector3(Math.sin(this.specA) * 6, 3.2, Math.cos(this.specA) * 6));
     const d = want.clone().sub(target), L = d.length(); d.normalize();
@@ -498,8 +534,213 @@ G.Coop = class {
     if (hit && hit.dist < L) want.copy(target).addScaledVector(d, Math.max(1, hit.dist - 0.3));
     cam.position.lerp(want, Math.min(1, dt * 4)); cam.lookAt(target);
   }
+  // ---------- VS : 1v1, chacun pour soi, 2v2 ----------
+  vsStart() {
+    const g = this.game, pl = g.player, M = G.VS_MODES[this.vs];
+    g.vs = this.vs;
+    g.wave = 99; g.phase = 'active'; g.phaseT = 0; g.toSpawn = 0; g.points = 1500; // toutes les stations ouvertes, pas de vagues
+    this.score = { k: 0, d: 0 }; this.pvOut = []; this.dthOut = []; this.lastHitBy = null; this.killerPeer = null;
+    this.respawnT = 0; this.protectT = 3; this.vsTime = M.time; this.vsState = [M.time, 0, '']; this.vsEndT = 0;
+    // zone de combat resserrée
+    g.borderR = g.borderTarget = Math.min(g.borderFull, M.zone); g.layoutBorder();
+    this.vsSpots = this.vsSpawnSpots();
+    // départ : chacun à un coin différent (ordre fixe des étiquettes)
+    const mates = this.members(this.code).filter((p) => !p.sameTab && (this.vs !== '2v2' || p.presence.tm === this.myTeam));
+    const tags = [this.tag, ...mates.map((p) => String(p.presence.id || ''))].sort();
+    const i = Math.max(0, tags.indexOf(this.tag));
+    let sp;
+    if (this.vs === '2v2') {
+      // chaque équipe part de son côté, les équipiers côte à côte
+      const base = this.vsStartSpots[this.myTeam === 1 ? 1 : 0];
+      const near = this.vsSpots.filter((p) => p.distanceTo(base) > 4 && p.distanceTo(base) < 11).sort((a, b) => a.distanceTo(base) - b.distanceTo(base));
+      sp = i === 0 || !near.length ? base : near[Math.min(near.length - 1, (i - 1) * 2)];
+    } else sp = this.vsStartSpots[i % this.vsStartSpots.length];
+    sp = sp || g.map.playerSpawn;
+    pl.pos.copy(sp); pl.vel.set(0, 0, 0); pl.camY = pl.pos.y + pl.eyeH;
+    pl.yaw = Math.atan2(-(g.borderC.x - sp.x), -(g.borderC.y - sp.z)); pl.pitch = 0;
+    // arrivée en cours de manche : on se place loin des adversaires dès qu'on les voit
+    const h = this.role === 'client' ? this.hostPeer() : null;
+    this.lateSpawnT = h && Array.isArray(h.presence.vs) && +h.presence.vs[0] < M.time - 5 ? 0.6 : 0;
+    g.message(M.name.toUpperCase(), M.goal + ' — ' + g.map.def.name + (this.role === 'host' ? '' : ' — cliquez dans l\'écran pour jouer'), 4);
+    G.Audio.S.waveStart();
+  }
+  // points d'apparition : au sol, dans la zone, accessibles (même liste chez tout le monde : carte identique)
+  vsSpawnSpots() {
+    const g = this.game, w = g.world, c = g.borderC, R = g.borderR - 3, y0 = g.map.playerSpawn.y;
+    const out = [], ok = (x, y, z) => {
+      if (y >= 999 || Math.abs(x + 0.5 - c.x) > R || Math.abs(z + 0.5 - c.y) > R || Math.abs(y - y0) > 6) return false;
+      const b = w.blockAt(x, y + 0.5, z), b2 = w.blockAt(x, y - 0.5, z);
+      if (b === G.B.WATER || b === G.B.LAVA || b === G.B.LAVA_FLOW || b2 === G.B.LAVA || b2 === G.B.LAVA_FLOW) return false;
+      if (w.collides(x + 0.5, y, z + 0.5, 0.35, 1.8, 'player')) return false;
+      return w.flowDistAt(x + 0.5, y, z + 0.5) >= 0;
+    };
+    for (const [x, y, z] of g.map.spawns || []) if (ok(x, y, z)) out.push(new THREE.Vector3(x + 0.5, y, z + 0.5));
+    for (let z = Math.floor(c.y - R); z <= c.y + R; z += 3) for (let x = Math.floor(c.x - R); x <= c.x + R; x += 3) {
+      const y = w.standBelow(x, y0 + 2.5, z); if (ok(x, y, z)) out.push(new THREE.Vector3(x + 0.5, y, z + 0.5));
+    }
+    if (!out.length) out.push(g.map.playerSpawn.clone());
+    // 4 départs éloignés les uns des autres (tirage du point le plus loin)
+    const start = [out.reduce((b, p) => (p.x + p.z < b.x + b.z ? p : b), out[0])];
+    while (start.length < 4) start.push(out.reduce((b, p) => (Math.min(...start.map((q) => q.distanceTo(p))) > Math.min(...start.map((q) => q.distanceTo(b))) ? p : b), out[0]));
+    this.vsStartSpots = start;
+    return out;
+  }
+  vsRespawn(quiet) {
+    const g = this.game, pl = g.player, foes = [...this.others.values()].filter((o) => o.enemy && !o.proxy.dead).map((o) => o.proxy.pos);
+    const cands = [];
+    for (let i = 0; i < 40; i++) {
+      const p = G.pick(this.vsSpots), d = foes.length ? Math.min(...foes.map((f) => f.distanceTo(p))) : G.rand(10, 30);
+      const seen = foes.some((f) => f.distanceTo(p) < 40 && g.world.lineOfSight(f.clone().add(new THREE.Vector3(0, 1.6, 0)), p.clone().add(new THREE.Vector3(0, 1.6, 0))));
+      cands.push({ p, k: d - (seen ? 25 : 0) + Math.random() * 4 });
+    }
+    cands.sort((a, b) => b.k - a.k);
+    const sp = cands[0].p;
+    pl.dead = false; pl.hp = pl.maxHp; pl.armor = 0; pl.grenades = 2; pl.refillAmmo(); pl.slideT = 0; pl.crouch = false;
+    pl.pos.copy(sp); pl.vel.set(0, 0, 0); pl.camY = pl.pos.y + pl.eyeH; pl.pitch = 0;
+    pl.yaw = Math.atan2(-(g.borderC.x - sp.x), -(g.borderC.y - sp.z));
+    this.protectT = 2.5; this.lastHitBy = null; this.killerPeer = null;
+    if (!quiet) g.message('', 'De retour au combat — protégé 2 s', 1.5, '#60ff90');
+  }
+  vsTick(dt) {
+    const g = this.game, pl = g.player, M = G.VS_MODES[this.vs];
+    this.protectT -= dt;
+    if (this.lateSpawnT > 0) { this.lateSpawnT -= dt; if (this.lateSpawnT <= 0 && !pl.dead) this.vsRespawn(true); }
+    if (pl.dead && g.phase === 'active') { this.respawnT -= dt; if (this.respawnT <= 0) this.vsRespawn(); }
+    // touches reçues, éliminations et fil des morts
+    for (const o of this.others.values()) {
+      const pr = (this.peers.find((p) => p.peer === o.peer) || {}).presence || {};
+      for (const h of Array.isArray(pr.pv) ? pr.pv : []) {
+        if (!Array.isArray(h) || !(h[0] > o.lastPv)) continue;
+        o.lastPv = h[0];
+        if (h[1] !== this.tag || pl.dead || this.protectT > 0 || g.phase !== 'active' || !o.enemy) continue;
+        this.lastHitBy = { peer: o.peer, tag: o.tag, t: g.time, head: !!h[3] };
+        g.damagePlayer(G.clamp(+h[2] || 0, 0, 400), { pos: o.proxy.pos, vsBy: o.tag });
+      }
+      for (const d of Array.isArray(pr.dth) ? pr.dth : []) {
+        if (!Array.isArray(d) || !(d[0] > o.lastDth)) continue;
+        o.lastDth = d[0];
+        const killer = d[1] === this.tag ? 'Vous' : this.nickOfTag(d[1]);
+        G.UI.feed(killer ? killer + ' <b>⟶</b> ' + G.esc(o.nick) + (d[2] ? ' ☠' : '') : G.esc(o.nick) + ' est mort', d[1] === this.tag ? '#f2c443' : null);
+        if (d[1] === this.tag && o.enemy) {
+          this.score.k++;
+          g.stats.kills++; if (d[2]) g.stats.headshots++;
+          g.addPoints(d[2] ? 300 : 250, d[2] ? 'TÊTE' : 'ÉLIMINATION');
+          G.UI.hitmarker(true, !!d[2]); G.Audio.S.kill();
+        }
+      }
+    }
+    // arbitrage par l'hôte : score à atteindre ou fin du temps
+    if (this.isHost && g.phase === 'active') {
+      this.vsTime -= dt;
+      const st = this.standings(), lim = M.limit;
+      let win = null;
+      if (this.vs === '2v2') { const t = [0, 0]; for (const r of st) if (r.team === 0 || r.team === 1) t[r.team] += r.k; if (t[0] >= lim) win = 't0'; else if (t[1] >= lim) win = 't1'; else if (this.vsTime <= 0) win = t[0] > t[1] ? 't0' : t[1] > t[0] ? 't1' : ''; }
+      else { const top = st[0]; if (top && top.k >= lim) win = top.tag; else if (this.vsTime <= 0) win = st.length > 1 && st[0].k === st[1].k ? '' : (top ? top.tag : ''); }
+      this.vsState = [Math.max(0, Math.ceil(this.vsTime)), 0, ''];
+      if (win !== null) this.vsFinish(win, 1);
+    } else if (!this.isHost) {
+      const h = this.hostPeer();
+      if (!h) { this.hostGoneT = (this.hostGoneT || 0) + dt; if (this.hostGoneT > 4) this.endForClient("L'hôte a quitté la partie"); return; }
+      this.hostGoneT = 0;
+      const v = h.presence.vs;
+      if (Array.isArray(v)) { this.vsState = [+v[0] || 0, +v[1] || 0, String(v[2] || '')]; if (this.vsState[1] && g.phase === 'active') { g.coopFinal = true; g.gameOver('vs'); } }
+    }
+  }
+  vsFinish(win, code) {
+    if (!this.isHost) return;
+    this.vsState = [Math.max(0, Math.ceil(this.vsTime)), code, win];
+    this.publish();
+    const g = this.game;
+    if (g.phase === 'active') { g.coopFinal = true; g.gameOver('vs'); }
+  }
+  // tir qui touche un adversaire : la touche est envoyée à la victime, qui l'applique chez elle
+  vsHit(e, dmg, part, src) {
+    const g = this.game, o = this.others.get(e.vsPeer);
+    if (!o || o.proxy.dead || g.player.dead) return;
+    let d = dmg * 0.6;
+    if (src === 'melee') d = 70;
+    else if (src === 'explosive' || src === 'shock') d = Math.min(dmg * 0.25, 110);
+    else if (src === 'car') d = Math.min(dmg * 0.2, 150);
+    else if (part === 'head') d = Math.min(d, 160);
+    else if (!(g.player.slot && (g.player.slot.id === 'sniper' || g.player.slot.id === 'ray'))) d = Math.min(d, 95);
+    this.vsSend(o, d, part === 'head', src);
+    g.stats.dmgDealt += d;
+    if (src === 'gun' || src === 'melee' || src === 'energy') g.addPoints(10);
+    G.UI.hitmarker(false, part === 'head');
+    if (part === 'head') G.Audio.S.headshot(); else G.Audio.S.hit();
+    e.flash = 0.09;
+  }
+  vsCarHit(peer, n) { const o = this.others.get(peer); if (o && o.enemy && !o.proxy.dead) this.vsSend(o, n / 1.2, false, 'gun'); }
+  vsSend(o, d, head, src) {
+    const last = this.pvOut[this.pvOut.length - 1];
+    if (last && last[1] === o.tag && last[0] > (this.hSent || 0)) { last[2] += Math.round(d); last[3] = last[3] || (head ? 1 : 0); return; }
+    this.pvOut.push([++this.seq, o.tag, Math.round(d), head ? 1 : 0, src === 'melee' ? 'm' : src === 'car' ? 'c' : src === 'explosive' ? 'x' : 'g']);
+    if (this.pvOut.length > 16) this.pvOut.shift();
+  }
+  // nous tombons : mort comptée, tueur annoncé, réapparition dans 4 s
+  vsDied() {
+    const g = this.game, pl = g.player;
+    pl.dead = true; pl.hp = 0; if (pl.vehicle) g.exitVehicle(true);
+    this.score.d++;
+    const kb = this.lastHitBy && g.time - this.lastHitBy.t < 8 ? this.lastHitBy : null;
+    this.dthOut.push([++this.seq, kb ? kb.tag : '', kb && kb.head ? 1 : 0]); if (this.dthOut.length > 4) this.dthOut.shift();
+    this.respawnT = 4; this.deathPos = pl.pos.clone(); this.killerPeer = kb ? kb.peer : null;
+    const kn = kb ? this.nickOfTag(kb.tag) : '';
+    G.UI.feed(kn ? kn + ' <b>⟶</b> Vous' + (kb.head ? ' ☠' : '') : 'Vous êtes mort', '#ff6050');
+    g.message('ÉLIMINÉ', kn ? 'par ' + kn + ' — réapparition dans 4 s' : 'Réapparition dans 4 s', 3, '#ff6060');
+    G.Audio.S.death(pl.pos.clone().add(new THREE.Vector3(0, 1.5, 0)), 'soldier', 1);
+    this.lastHitBy = null;
+    this.publish();
+  }
+  nickOfTag(tag) {
+    if (!tag) return '';
+    if (tag === this.tag) return G.esc(this.nick());
+    for (const o of this.others.values()) if (o.tag === tag) return G.esc(o.nick || 'Joueur');
+    return 'Joueur';
+  }
+  // classement de la partie (nous compris)
+  standings() {
+    const rows = [{ tag: this.tag, nick: this.nick(), k: this.score ? this.score.k : 0, d: this.score ? this.score.d : 0, team: this.myTeam, me: true, color: this.vs === '2v2' ? (this.myTeam === 1 ? '#ff5a4a' : '#5a9aff') : '#f2c443' }];
+    for (const o of this.others.values()) rows.push({ tag: o.tag, nick: o.nick || 'Joueur', k: o.k, d: o.d, team: o.team, me: false, enemy: o.enemy, color: '#' + o.color.toString(16).padStart(6, '0') });
+    return rows.sort((a, b) => b.k - a.k || a.d - b.d);
+  }
+  vsSummary(reason) {
+    const st = this.standings(), M = G.VS_MODES[this.vs], [, code, win] = this.vsState || [0, 0, ''];
+    let res = 'draw';
+    if (!code) res = 'stopped';
+    else if (code === 2) res = 'stopped';
+    else if (this.vs === '2v2') res = win === '' ? 'draw' : win === 't' + this.myTeam ? 'win' : 'lose';
+    else res = win === '' ? 'draw' : win === this.tag ? 'win' : 'lose';
+    const teams = this.vs === '2v2' ? [0, 1].map((t) => st.filter((r) => r.team === t).reduce((a, r) => a + r.k, 0)) : null;
+    return { mode: this.vs, name: M.name, res, standings: st, teams, myTeam: this.myTeam, map: this.game.map.def.name, abandon: reason === 'abandon', hostLeft: !this.isHost && !this.hostPeer() };
+  }
+  // bandeau du haut en VS
+  vsHud() {
+    if (!this.vs || !this.score) return null;
+    const M = G.VS_MODES[this.vs], t = this.isHost ? Math.max(0, Math.ceil(this.vsTime)) : (this.vsState ? this.vsState[0] : M.time);
+    const st = this.standings();
+    let score;
+    if (this.vs === '2v2') {
+      const s = [0, 0]; for (const r of st) if (r.team === 0 || r.team === 1) s[r.team] += r.k;
+      score = '<span style="color:#5a9aff">BLEUS ' + s[0] + '</span> — <span style="color:#ff5a4a">' + s[1] + ' ROUGES</span>';
+    } else if (this.vs === '1v1') {
+      const opp = st.find((r) => !r.me);
+      score = 'Vous ' + this.score.k + ' — ' + (opp ? opp.k + ' ' + G.esc(opp.nick) : '0 …');
+    } else {
+      const rank = st.findIndex((r) => r.me) + 1;
+      score = 'Vous ' + this.score.k + ' — ' + (rank === 1 ? '1er' : rank + 'e — en tête : ' + G.esc(st[0].nick) + ' ' + st[0].k);
+    }
+    return { score, time: G.fmtTime(t), goal: 'Premier à ' + M.limit + (this.vs === '2v2' ? ' (équipe)' : ''), dead: this.game.player.dead ? Math.ceil(this.respawnT) : 0 };
+  }
+
   // liste affichée dans le HUD
   team() {
+    if (this.vs) return this.standings().map((r) => {
+      const o = r.me ? null : [...this.others.values()].find((x) => x.tag === r.tag);
+      const dead = r.me ? this.game.player.dead : !!(o && o.proxy.dead);
+      const hp = r.me ? Math.round(this.game.player.hp / this.game.player.maxHp * 100) : o && !o.enemy ? o.proxy.hp : null;
+      return { nick: r.nick + (r.me ? ' (vous)' : ''), hp, dead, color: r.color, kd: r.k + ' / ' + r.d, enemy: !!r.enemy };
+    });
     const out = [{ nick: this.nick() + ' (vous)', hp: Math.round(this.game.player.hp / this.game.player.maxHp * 100), dead: this.game.player.dead, color: '#f2c443' }];
     for (const o of this.others.values()) out.push({ nick: o.nick || 'Équipier', hp: o.proxy.hp, dead: o.proxy.dead, color: '#' + o.color.toString(16).padStart(6, '0') });
     return out;

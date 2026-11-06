@@ -27,10 +27,11 @@ G.UI = (function () {
   }
 
   // ---------- Coop en ligne ----------
-  let coopMap = 'village', coopType = 'zombies', coopView = '', coopBound = false;
+  let coopMap = 'village', coopType = 'zombies', coopVs = '', coopView = '', coopBound = false;
+  const modeName = (vs) => (vs && G.VS_MODES[vs] ? G.VS_MODES[vs].name : 'Coop');
   const mapName = (id) => (G.Maps.list.find((m) => m.id === id) || {}).name || id;
   const typeName = (t) => (t === 'soldats' ? 'Soldats' : 'Zombies');
-  function coopState(C) { return !C.ready ? 'wait' : !C.available ? 'na' : C.code ? 'room:' + C.code : 'lobby'; }
+  function coopState(C) { return !C.ready ? 'wait' : !C.available ? 'na' : C.code ? 'room:' + C.code + ':' + (C.vs || '') : 'lobby'; }
   function renderCoop() {
     const C = G.game && G.game.coop, body = $('coopBody');
     if (!C || !body) return;
@@ -46,8 +47,11 @@ G.UI = (function () {
       return;
     }
     if (st === 'lobby') {
+      const vsList = [['', '🤝 Coop', 'Contre les vagues, 2 à 4'], ['1v1', '⚔ 1v1', 'Duel, premier à 10'], ['ffa', '💀 Chacun pour soi', '2 à 4, premier à 15'], ['2v2', '👥 2v2', 'Équipes, première à 20']];
       let h = '<div class="cols coopcols"><div class="panel"><h3 class="sec">Créer une partie</h3>' +
-        '<div class="modes">' + ['zombies', 'soldats'].map((t) => '<button class="ctype gtype' + (coopType === t ? ' active' : '') + '" data-t="' + t + '"><b>' + (t === 'soldats' ? '🎖 Soldats' : '🧟 Zombies') + '</b></button>').join('') + '</div>' +
+        '<div class="modes vsmodes">' + vsList.map(([k, n, d]) => '<button class="cvs gtype' + (coopVs === k ? ' active' : '') + '" data-vs="' + k + '"><b>' + n + '</b><small>' + d + '</small></button>').join('') + '</div>' +
+        (coopVs ? '<p class="hint" style="margin:0 0 6px">Joueurs contre joueurs, sans zombies ni soldats : chacun part avec 1500 points pour s\'équiper aux stations, réapparaît 4 s après sa mort, et l\'adversaire n\'apparaît sur la minimap que quand il tire.</p>' :
+          '<div class="modes">' + ['zombies', 'soldats'].map((t) => '<button class="ctype gtype' + (coopType === t ? ' active' : '') + '" data-t="' + t + '"><b>' + (t === 'soldats' ? '🎖 Soldats' : '🧟 Zombies') + '</b></button>').join('') + '</div>') +
         '<div class="maps cmaps">' + G.Maps.list.map((m) => '<button class="mapcard' + (m.id === coopMap ? ' active' : '') + '" data-cmap="' + m.id + '"><div class="thumb" style="background-image:url(' + thumb(m.id) + ')"></div><div class="info"><h3>' + m.name + '</h3></div></button>').join('') + '</div>' +
         '<div class="launch"><button id="btnCoopCreate" class="big">Créer le salon</button></div></div>' +
         '<div class="panel"><h3 class="sec">Rejoindre une partie</h3><div id="coopGames"></div>' +
@@ -55,8 +59,9 @@ G.UI = (function () {
         '<p class="hint">Pseudo : <b>' + G.esc(R.profile.name) + '</b> (modifiable dans Options). Vos amis doivent ouvrir cette même page (lien partagé) pour voir vos parties.</p></div></div>';
       body.innerHTML = h;
       body.querySelectorAll('.ctype').forEach((b) => b.addEventListener('click', () => { coopType = b.dataset.t; G.Audio.S.click(); coopView = ''; renderCoop(); }));
+      body.querySelectorAll('.cvs').forEach((b) => b.addEventListener('click', () => { coopVs = b.dataset.vs; G.Audio.S.click(); coopView = ''; renderCoop(); }));
       body.querySelectorAll('[data-cmap]').forEach((b) => b.addEventListener('click', () => { coopMap = b.dataset.cmap; G.Audio.S.click(); coopView = ''; renderCoop(); }));
-      $('btnCoopCreate').addEventListener('click', () => { G.Audio.init(); C.create(coopMap, coopType); });
+      $('btnCoopCreate').addEventListener('click', () => { G.Audio.init(); C.create(coopMap, coopType, coopVs || null); });
       const join = () => { const c = $('coopCode').value.trim().toLowerCase(); if (c.length < 4) { G.Audio.S.deny(); return; } C.join(c); };
       $('btnCoopJoin').addEventListener('click', join);
       $('coopCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
@@ -65,11 +70,12 @@ G.UI = (function () {
     }
     // salon d'attente
     body.innerHTML = '<div class="panel coopRoom"><div class="ccode">Salon <b>' + G.esc(C.code.toUpperCase()) + '</b></div><div class="csub" id="coopSub"></div>' +
-      '<div id="coopMembers"></div><div class="btnrow">' + (C.role === 'host' ? '<button class="act big" id="btnCoopStart">Lancer la partie</button>' : '<span class="hint" id="coopWait">En attente du lancement par l\'hôte…</span>') +
+      '<div id="coopMembers"></div><div class="btnrow">' + (C.vs === '2v2' ? '<button class="act" id="btnCoopTeam">Changer d\'équipe</button>' : '') + (C.role === 'host' ? '<button class="act big" id="btnCoopStart">Lancer la partie</button>' : '<span class="hint" id="coopWait">En attente du lancement par l\'hôte…</span>') +
       '<button class="act" id="btnCoopLeave">Quitter le salon</button></div>' +
-      '<p class="hint">Donnez le code <b>' + G.esc(C.code.toUpperCase()) + '</b> à vos amis : ils le saisissent dans « Rejoindre une partie ». Jusqu\'à 4 joueurs ; on peut aussi rejoindre une partie en cours.</p></div>';
+      '<p class="hint">Donnez le code <b>' + G.esc(C.code.toUpperCase()) + '</b> à vos amis : ils le saisissent dans « Rejoindre une partie ». Jusqu\'à ' + C.maxPlayers(C.vs) + ' joueurs ; on peut aussi rejoindre une partie en cours.</p></div>';
     if ($('btnCoopStart')) $('btnCoopStart').addEventListener('click', () => { G.Audio.init(); C.launch(); });
     $('btnCoopLeave').addEventListener('click', () => { C.leave(); });
+    if ($('btnCoopTeam')) $('btnCoopTeam').addEventListener('click', () => { G.Audio.S.click(); C.switchTeam(); });
     renderCoopLists(C);
   }
   function renderCoopLists(C) {
@@ -80,8 +86,8 @@ G.UI = (function () {
       if (gl.dataset.k !== key) {
         gl.dataset.k = key;
         gl.innerHTML = list.length ? list.map((g) => {
-          const full = g.players >= 4;
-          return '<div class="cgame"><div><b>' + G.esc(g.host) + '</b> <span class="tagm">' + G.esc(g.code.toUpperCase()) + '</span><small>' + G.esc(mapName(g.map)) + ' — ' + typeName(g.type) + ' — ' + g.players + '/4' + (g.started ? ' — en cours' : '') + '</small></div>' +
+          const max = C.maxPlayers(g.vs), full = g.players >= max;
+          return '<div class="cgame"><div><b>' + G.esc(g.host) + '</b> <span class="tagm' + (g.vs ? ' r' : '') + '">' + modeName(g.vs) + '</span> <span class="tagm">' + G.esc(g.code.toUpperCase()) + '</span><small>' + G.esc(mapName(g.map)) + (g.vs ? '' : ' — ' + typeName(g.type)) + ' — ' + g.players + '/' + max + (g.started ? ' — en cours' : '') + '</small></div>' +
             '<button class="act" data-join="' + G.esc(g.code) + '"' + (full ? ' disabled' : '') + '>' + (full ? 'Complet' : g.started ? 'Rejoindre en cours' : 'Rejoindre') + '</button></div>';
         }).join('') : '<p class="hint">Aucune partie ouverte pour l\'instant : créez-en une, ou attendez qu\'un ami en crée une.</p>';
         gl.querySelectorAll('[data-join]').forEach((b) => b.addEventListener('click', () => { G.Audio.init(); C.join(b.dataset.join); }));
@@ -89,12 +95,15 @@ G.UI = (function () {
     }
     const ml = $('coopMembers');
     if (ml) {
-      const host = C.role === 'host' ? { presence: { lb: { m: C.mapId, t: C.type } } } : C.hostPeer();
+      const host = C.role === 'host' ? { presence: { lb: C.lobbyInfo(0) } } : C.hostPeer();
       const lb = host && host.presence && host.presence.lb;
-      const sub = lb ? mapName(lb.m) + ' — ' + typeName(lb.t) + (lb.st && C.role !== 'host' ? ' — partie en cours, vous allez la rejoindre…' : '') : 'Recherche de l\'hôte…';
+      const sub = lb ? modeName(lb.vs) + ' — ' + mapName(lb.m) + (lb.vs ? '' : ' — ' + typeName(lb.t)) + (lb.vs ? ' — ' + G.VS_MODES[lb.vs].goal : '') + (lb.st && C.role !== 'host' ? ' — partie en cours, vous allez la rejoindre…' : '') : 'Recherche de l\'hôte…';
       if ($('coopSub').textContent !== sub) $('coopSub').textContent = sub;
       const mem = C.members(C.code);
-      const html = mem.map((p) => '<div class="cmember"><span>' + (p.presence.role === 'host' ? '★ ' : '') + G.esc(String(p.presence.nick || 'Survivant').slice(0, 16)) + (p.sameTab ? ' (vous)' : '') + '</span><small>' + (p.presence.role === 'host' ? 'Hôte' : 'Équipier') + (p.guest ? ' — invité' : '') + '</small></div>').join('') || '<p class="hint">…</p>';
+      const row = (p) => '<div class="cmember"' + (C.vs === '2v2' ? ' style="border-left:4px solid ' + (p.presence.tm === 1 ? '#ff5a4a' : '#5a9aff') + '"' : '') + '><span>' + (p.presence.role === 'host' ? '★ ' : '') + G.esc(String(p.presence.nick || 'Survivant').slice(0, 16)) + (p.sameTab ? ' (vous)' : '') + '</span><small>' + (p.presence.role === 'host' ? 'Hôte' : C.vs ? 'Joueur' : 'Équipier') + (p.guest ? ' — invité' : '') + '</small></div>';
+      let html;
+      if (C.vs === '2v2') html = [0, 1].map((t) => '<div class="cteam"><h4 style="color:' + (t ? '#ff5a4a' : '#5a9aff') + '">' + (t ? 'Équipe rouge' : 'Équipe bleue') + '</h4>' + (mem.filter((p) => p.presence.tm === t).map(row).join('') || '<p class="hint">Personne</p>') + '</div>').join('');
+      else html = mem.map(row).join('') || '<p class="hint">…</p>';
       if (ml.innerHTML !== html) ml.innerHTML = html;
     }
   }
@@ -435,7 +444,9 @@ G.UI = (function () {
     setHTML('powers', Object.entries(d.power).filter(([, v]) => v > 0).map(([k, v]) => { const P = G.POWERUPS[k]; return '<div style="color:#' + P.color.toString(16).padStart(6, '0') + '">' + P.icon + ' ' + Math.ceil(v) + 's</div>'; }).join(''));
     setText('prompt', d.prompt);
     $('team').classList.toggle('hidden', !d.team);
-    if (d.team) setHTML('team', d.team.map((m) => '<div class="' + (m.dead ? 'down' : '') + '"><i style="background:' + m.color + '"></i><span>' + G.esc(m.nick) + '</span><b><em style="width:' + Math.max(0, Math.min(100, m.hp)) + '%"></em></b>' + (m.dead ? '<small>À TERRE</small>' : '') + '</div>').join(''));
+    if (d.team) setHTML('team', d.team.map((m) => '<div class="' + (m.dead ? 'down' : '') + '"><i style="background:' + m.color + '"></i><span>' + G.esc(m.nick) + '</span>' + (m.hp !== null && m.hp !== undefined ? '<b><em style="width:' + Math.max(0, Math.min(100, m.hp)) + '%"></em></b>' : '') + (m.kd ? '<u>' + m.kd + '</u>' : '') + (m.dead ? '<small>' + (m.kd ? '✝' : 'À TERRE') + '</small>' : '') + '</div>').join(''));
+    $('vsbar').classList.toggle('hidden', !d.vs);
+    if (d.vs) { setHTML('vsbarS', d.vs.score); setText('vsbarI', d.vs.time + ' — ' + d.vs.goal + (d.vs.dead ? ' — réapparition dans ' + d.vs.dead + ' s' : '')); }
     if (d.boss) { $('bossbar').classList.remove('hidden'); setText('bossname', d.boss.name + (d.boss.stunned ? ' — ÉTOURDI' : '')); $('bosshp').style.width = (d.boss.hp * 100).toFixed(1) + '%'; }
     else $('bossbar').classList.add('hidden');
     const gap = 6 + (1 - d.ads) * 6 + (d.sprint ? 8 : 0);
@@ -492,9 +503,33 @@ G.UI = (function () {
     if (p) { current = 'pause'; $('scr-pause').classList.remove('hidden'); }
     else { document.querySelectorAll('#menus .screen').forEach((s) => s.classList.add('hidden')); current = 'game'; }
   }
+  // fil des éliminations (VS)
+  function feed(html, color) {
+    const f = $('feed'), d = document.createElement('div');
+    d.innerHTML = html; if (color) d.style.color = color;
+    f.appendChild(d);
+    while (f.children.length > 5) f.removeChild(f.firstChild);
+    setTimeout(() => { d.style.opacity = 0; setTimeout(() => d.remove(), 600); }, 5000);
+  }
+  function vsTable(st, myTeam, two) {
+    return '<table><tr><th>#</th><th>Joueur</th>' + (two ? '<th>Équipe</th>' : '') + '<th>Élim.</th><th>Morts</th><th>Ratio</th></tr>' + st.map((r, i) => '<tr' + (r.me ? ' class="sel"' : '') + '><td>' + (i + 1) + '</td><td>' + G.esc(r.nick) + (r.me ? ' (vous)' : '') + '</td>' +
+      (two ? '<td style="color:' + (r.team === 1 ? '#ff5a4a' : '#5a9aff') + '">' + (r.team === 1 ? 'Rouge' : 'Bleue') + '</td>' : '') + '<td>' + r.k + '</td><td>' + r.d + '</td><td>' + (r.d ? (r.k / r.d).toFixed(2) : r.k.toFixed(2)) + '</td></tr>').join('') + '</table>';
+  }
+  function showVsOver(sum) {
+    const T = { win: ['VICTOIRE', 'var(--good)'], lose: ['DÉFAITE', 'var(--bad)'], draw: ['ÉGALITÉ', 'var(--accent2)'], stopped: ['PARTIE INTERROMPUE', 'var(--muted)'] }[sum.res];
+    let h = '<p class="over-title" style="color:' + T[1] + '">' + T[0] + '</p><div style="color:var(--muted)">' + sum.name + ' — ' + G.esc(sum.map) + (sum.hostLeft ? ' — l\'hôte a quitté la partie' : sum.abandon ? ' — vous avez quitté la partie' : '') + '</div>';
+    if (sum.teams) h += '<div class="vsfinal"><span style="color:#5a9aff">BLEUS ' + sum.teams[0] + '</span> — <span style="color:#ff5a4a">' + sum.teams[1] + ' ROUGES</span></div>';
+    h += '<div class="panel" style="margin:14px 0">' + vsTable(sum.standings, sum.myTeam, !!sum.teams) + '</div>';
+    h += '<div class="btnrow"><button class="big" id="btnRoom">Retour au salon</button><button id="btnMenu">Menu principal</button></div>';
+    $('overBody').innerHTML = h;
+    $('scr-over').classList.remove('hidden');
+    $('btnRoom').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.quitToMenu(true); go('coop'); });
+    $('btnMenu').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.quitToMenu(); go('main'); });
+  }
   function showScoreboard(on) {
     const g = G.game; const sb = $('scoreboard');
     if (!on || !g || g.phase === 'menu') { sb.classList.add('hidden'); return; }
+    if (g.vs && g.coop) { const C = g.coop; sb.innerHTML = '<h3>' + G.VS_MODES[g.vs].name + ' — ' + G.esc(g.map.def.name) + '</h3>' + vsTable(C.standings(), C.myTeam, g.vs === '2v2'); sb.classList.remove('hidden'); return; }
     const s = g.stats; const acc = s.shots ? Math.round((s.hits / s.shots) * 100) : 0;
     sb.innerHTML = '<h3>' + G.esc(R.profile.name) + ' — vague ' + g.wave + '</h3><div class="kv" style="margin-top:0">' +
       '<span>Temps</span><span>' + G.fmtTime(g.time) + '</span><span>Éliminations</span><span>' + s.kills + '</span><span>Tirs à la tête</span><span>' + s.headshots + '</span>' +
@@ -523,5 +558,5 @@ G.UI = (function () {
     go('main');
   }
 
-  return { showMissionEnd, updateObjective, underwater, showCraft, init, go, updateHUD, hitmarker, pointsPopup, hurt, damageDir, flash, message, showHUD, showPause, showScoreboard, showGameOver };
+  return { feed, showVsOver, showMissionEnd, updateObjective, underwater, showCraft, init, go, updateHUD, hitmarker, pointsPopup, hurt, damageDir, flash, message, showHUD, showPause, showScoreboard, showGameOver };
 })();

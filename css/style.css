@@ -271,3 +271,17 @@ h3.sec { font-family: 'Bungee', sans-serif; font-weight: 400; letter-spacing: 1p
 #team .down em { background: #c03a2a; }
 #team small { color: #ff7060; font-size: 11px; }
 @media (max-width: 760px) { .coopcols { grid-template-columns: 1fr; } }
+
+/* ---------- VS ---------- */
+.vsmodes .gtype { min-width: 130px; flex: 1 1 130px; }
+.cteam { margin-bottom: 10px; }
+.cteam h4 { margin: 6px 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
+#vsbar { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); text-align: center; pointer-events: none; }
+#vsbar .vsscore { font-family: 'Bungee', sans-serif; font-size: 24px; text-shadow: 0 2px 0 #000; background: rgba(0,0,0,0.45); padding: 6px 16px; border-radius: 8px; white-space: nowrap; }
+#vsbar .vsinfo { font-size: 13px; color: #ddd; margin-top: 4px; text-shadow: 0 1px 2px #000; }
+#feed { position: absolute; right: 20px; top: 182px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; pointer-events: none; }
+#feed div { background: rgba(0,0,0,0.55); padding: 4px 10px; border-radius: 4px; font-size: 14px; font-weight: 600; text-shadow: 0 1px 2px #000; transition: opacity .6s; }
+#feed b { color: #ff7060; }
+#team u { text-decoration: none; color: #f2c443; min-width: 38px; text-align: right; }
+.vsfinal { font-family: 'Bungee', sans-serif; font-size: 30px; margin-top: 10px; }
+#scoreboard table { width: 100%; }

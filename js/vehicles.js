@@ -158,7 +158,7 @@ G.Vehicle = class {
     this.syncMesh(); this.updateSolid();
     if (this.pos.distanceTo(this.blockPos) > 0.8) this.reblock();
     // l'hôte applique les ennemis renversés par l'équipier (les points lui reviennent)
-    if (this.game.coop && this.game.coop.isHost && Math.abs(this.speed) > 3) this.runOver(this.remote);
+    if (this.game.coop && this.game.coop.isHost && !this.game.vs && Math.abs(this.speed) > 3) this.runOver(this.remote);
   }
   step(dt) {
     const game = this.game;
@@ -181,7 +181,7 @@ G.Vehicle = class {
   runOver(peer) {
     const game = this.game, f = this.forward, r = this.right;
     for (const e of game.enemies) {
-      if (e.dead || e.carHitCD > game.time) continue;
+      if (e.dead || e.carHitCD > game.time || (peer && e.avatar)) continue;
       const d = e.pos.clone().sub(this.pos);
       if (Math.abs(d.y) > 2) continue;
       if (Math.abs(d.dot(f)) < this.L / 2 + 0.4 && Math.abs(d.dot(r)) < this.W / 2 + 0.4) {
@@ -201,7 +201,7 @@ G.Vehicle = class {
   damage(n) {
     if (this.dead) return;
     // voiture d'un équipier : l'hôte lui transmet les dégâts (c'est son jeu qui fait foi)
-    if (this.remote) { const c = this.game.coop; if (c && c.isHost) c.queueDamage(this.remote, n / 1.2, null); return; }
+    if (this.remote) { const c = this.game.coop; if (c && this.game.vs) c.vsCarHit(this.remote, n); else if (c && c.isHost) c.queueDamage(this.remote, n / 1.2, null); return; }
     this.hp -= n;
     if (this.hp <= 0) this.explode();
   }
