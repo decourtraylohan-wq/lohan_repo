@@ -114,14 +114,47 @@ G.Player = class {
     this.vmGun.add(this.flash);
   }
 
+  // assistance de visée légère : ennemi visible le plus proche du viseur, dans un petit cône
+  aimTarget() {
+    const game = this.game, w = game.world;
+    if (!game.enemies || !game.enemies.length) return null;
+    const cone = this.ads > 0.5 ? 0.16 : 0.12; // ≈ 9° en visant, 7° au jugé
+    const look = this.lookDir();
+    let best = null;
+    for (const e of game.enemies) {
+      if (e.dead) continue;
+      const p = new THREE.Vector3(e.pos.x, e.centerY() + 0.25 * Math.min(e.size, 1.6), e.pos.z);
+      const d = p.clone().sub(this.eye), L = d.length();
+      if (L > 70 || L < 0.8) continue;
+      const ang = Math.acos(G.clamp(look.dot(d.divideScalar(L)), -1, 1));
+      if (ang > cone || (best && ang >= best.ang)) continue;
+      if (!w.lineOfSight(this.eye, p)) continue;
+      best = { e, p, ang, cone };
+    }
+    return best;
+  }
+  applyAimAssist(t, dt) {
+    const dx = t.p.x - this.eye.x, dy = t.p.y - this.eye.y, dz = t.p.z - this.eye.z;
+    const wantYaw = Math.atan2(-dx, -dz), wantPitch = Math.atan2(dy, Math.hypot(dx, dz));
+    let dyaw = wantYaw - this.yaw; while (dyaw > Math.PI) dyaw -= Math.PI * 2; while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+    const dpitch = wantPitch - this.pitch;
+    let k = 0;
+    if (this.ads > 0.5 && !this.wasAds) k = 0.55;                                   // en épaulant : on se cale en partie sur la cible
+    else if (this.ads > 0.5 || this.mouse.left) k = Math.min(1, dt * (this.ads > 0.5 ? 3.2 : 2.4)); // en tirant / visant : légère attraction
+    this.yaw += dyaw * k; this.pitch += dpitch * k;
+  }
   onMouseMove(dx, dy) { if (this.vehicle) { this._orbitDX = (this._orbitDX || 0) + dx; return; } this.lookDX += dx; this.lookDY += dy; this.sway.x += dx * 0.0004; this.sway.y += dy * 0.0004; }
 
   update(dt, cam) {
     const game = this.game, w = game.world, set = G.Ranked.profile.settings;
     // regard
-    const sens = 0.0022 * set.sens * (1 - this.ads * (1 - this.wstats.zoom) * 0.6);
+    const assist = set.aim !== 'off' && !this.vehicle && !this.spectator ? this.aimTarget() : null;
+    const friction = assist ? 1 - 0.35 * (1 - assist.ang / assist.cone) : 1; // le viseur ralentit sur une cible
+    const sens = 0.0022 * set.sens * (1 - this.ads * (1 - this.wstats.zoom) * 0.6) * friction;
     this.yaw -= this.lookDX * sens; this.pitch -= this.lookDY * sens;
     this.lookDX = this.lookDY = 0;
+    if (assist) this.applyAimAssist(assist, dt);
+    this.wasAds = this.ads > 0.5;
     this.pitch = G.clamp(this.pitch, -1.55, 1.55);
     if (this.vehicle) { this.updateVehicleInput(); this.vmRoot.visible = false; this.knife.visible = false; return; }
     if (this.spectator) { this.updateSpectator(dt, cam); return; }

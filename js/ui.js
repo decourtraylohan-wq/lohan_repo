@@ -283,6 +283,7 @@ G.UI = (function () {
     $('optVol').value = s.vol; $('optVolV').textContent = Math.round(s.vol * 100) + '%';
     $('optFov').value = s.fov; $('optFovV').textContent = s.fov + '°';
     $('optQual').value = s.quality;
+    $('optAim').value = s.aim || 'leger';
   }
   function bindOptions() {
     const s = () => R.profile.settings;
@@ -291,6 +292,7 @@ G.UI = (function () {
     $('optVol').addEventListener('input', (e) => { s().vol = Number(e.target.value); $('optVolV').textContent = Math.round(s().vol * 100) + '%'; G.Audio.setVolume(s().vol); R.save(); });
     $('optFov').addEventListener('input', (e) => { s().fov = Number(e.target.value); $('optFovV').textContent = s().fov + '°'; R.save(); });
     $('optQual').addEventListener('change', (e) => { s().quality = e.target.value; R.save(); G.game.applyQuality(); });
+    $('optAim').addEventListener('change', (e) => { s().aim = e.target.value; R.save(); });
   }
 
   function showGameOver(run, res) {

@@ -15,7 +15,7 @@ G.Ranked = (function () {
   function defaults() {
     return {
       name: 'Survivant', rp: 0, peakRp: 0, xp: 0,
-      settings: { sens: 1.0, vol: 0.6, fov: 75, quality: 'haute' },
+      settings: { sens: 1.0, vol: 0.6, fov: 75, quality: 'haute', aim: 'leger' },
       career: { runs: 0, rankedRuns: 0, kills: 0, headshots: 0, shots: 0, hits: 0, dmgDealt: 0, dmgTaken: 0, points: 0, time: 0, bosses: 0, bestWave: {}, bestRankedWave: 0, specials: 0 },
       runs: [],
     };
