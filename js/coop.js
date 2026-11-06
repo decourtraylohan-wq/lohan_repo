@@ -36,20 +36,34 @@ G.Coop = class {
     this.ready = true;
     if (!room) { this.available = false; this.changed(); return; }
     this.room = room; this.available = true;
+    const fail = (e) => { this.roomError = (e && e.code) || 'error'; this.changed(); };
     room.onPeers((c) => {
       this.peers = c.peers;
       for (const p of c.peers) if (p.isMe && p.sameTab) this.myPeer = p.peer;
       for (const p of c.left) this.dropPeer(p.peer);
       this.changed();
-    }, () => { this.available = false; this.changed(); });
-    room.onConnection((ok) => { this.connected = ok; this.changed(); });
+    }, fail);
+    room.onConnection((ok) => { this.connected = ok; if (ok) this.connectedOnce = true; this.changed(); }, fail);
     this.push({ v: 1, id: this.tag, nick: this.nick(), g: null, role: null, lb: null });
+    // la présence complète est renvoyée régulièrement hors partie (rattrape un envoi perdu)
+    setInterval(() => { if (this.room && !this.active && !this.roomError) this.room.presence(Object.assign({}, this.mine, { nick: this.nick() })).catch((e) => this.pushFailed(e)); }, 3000);
   }
+  pushFailed(e) {
+    const c = e && e.code;
+    if (c === 'not_granted' || c === 'not_permitted') { this.roomError = c; this.changed(); }
+  }
+  // personnes visibles sur la page (nous compris)
+  viewers() { return this.peers.filter((p) => p.kind !== 'agent').length; }
+  // invité : l'hôte du code saisi est-il introuvable depuis un moment ?
+  hostMissing() { return this.role === 'client' && !this.started && this.joinT && performance.now() - this.joinT > 5000 && !this.hostPeer(); }
   nick() { return (G.Ranked.profile.name || 'Survivant').slice(0, 16); }
   push(patch) {
     if (!this.room) return;
     for (const k in patch) { if (patch[k] === null) delete this.mine[k]; else this.mine[k] = patch[k]; }
-    this.room.presence(patch).catch(() => {});
+    // valeurs JSON strictes (un nombre infini ou non défini ferait refuser toute la présence)
+    const clean = JSON.parse(JSON.stringify(patch, (k, v) => (typeof v === 'number' && !Number.isFinite(v) ? 0 : v)));
+    for (const k in patch) if (patch[k] === null) clean[k] = null;
+    this.room.presence(clean).catch((e) => this.pushFailed(e));
   }
   tagOf(peer) { const o = this.others.get(peer); return o && o.tag ? o.tag : ''; }
   onChange(fn) { this.listeners.push(fn); }
@@ -87,8 +101,9 @@ G.Coop = class {
   }
   switchTeam() { if (this.vs !== '2v2' || this.started) return; this.myTeam = this.myTeam === 0 ? 1 : 0; this.push({ tm: this.myTeam }); this.changed(); }
   join(code) {
-    code = String(code || '').trim().toLowerCase();
+    code = String(code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     if (!code) return false;
+    this.joinT = performance.now();
     this.code = code; this.role = 'client'; this.started = false; this.vs = null; this.myTeam = null;
     this.push({ nick: this.nick(), g: code, role: 'client', lb: null, tm: null, vs: null, sc: null });
     this.changed();

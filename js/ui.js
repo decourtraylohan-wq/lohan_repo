@@ -31,11 +31,15 @@ G.UI = (function () {
   const modeName = (vs) => (vs && G.VS_MODES[vs] ? G.VS_MODES[vs].name : 'Coop');
   const mapName = (id) => (G.Maps.list.find((m) => m.id === id) || {}).name || id;
   const typeName = (t) => (t === 'soldats' ? 'Soldats' : 'Zombies');
-  function coopState(C) { return !C.ready ? 'wait' : !C.available ? 'na' : C.code ? 'room:' + C.code + ':' + (C.vs || '') : 'lobby'; }
+  function coopState(C) { return !C.ready ? 'wait' : !C.available ? 'na' : C.roomError ? 'denied' : C.code ? 'room:' + C.code + ':' + (C.vs || '') : 'lobby'; }
   function renderCoop() {
     const C = G.game && G.game.coop, body = $('coopBody');
     if (!C || !body) return;
-    if (!coopBound) { coopBound = true; C.onChange(() => { if (current === 'coop' && G.game.phase === 'menu') renderCoop(); }); }
+    if (!coopBound) {
+      coopBound = true;
+      C.onChange(() => { if (current === 'coop' && G.game.phase === 'menu') renderCoop(); });
+      setInterval(() => { if (current === 'coop' && G.game.phase === 'menu') renderCoop(); }, 1000);
+    }
     const st = coopState(C);
     if (st === coopView) { renderCoopLists(C); return; }
     coopView = st;
@@ -46,6 +50,12 @@ G.UI = (function () {
         '<ol><li>Ouvrez le menu <b>Partager</b> de la page et invitez-les (ou envoyez-leur le lien).</li><li>Ils ouvrent le lien en étant connectés à leur compte Claude.</li><li>L\'un de vous crée une partie ici, les autres la rejoignent.</li></ol></div>';
       return;
     }
+    if (st === 'denied') {
+      body.innerHTML = '<div class="panel coopinfo"><h3 class="sec">Vous n\'êtes pas admis dans le salon en ligne</h3>' +
+        '<p>Cette page est ouverte sans accès au salon (lien public, ou compte non connecté). Pour jouer ensemble :</p>' +
+        '<ol><li>Le propriétaire de la page ouvre le menu <b>Partager</b> et <b>invite votre adresse e-mail</b> (le lien public seul ne suffit pas).</li><li>Ouvrez la page depuis l\'invitation, connecté à votre compte Claude.</li><li>Rechargez la page, puis rejoignez la partie avec son code.</li></ol></div>';
+      return;
+    }
     if (st === 'lobby') {
       const vsList = [['', '🤝 Coop', 'Contre les vagues, 2 à 4'], ['1v1', '⚔ 1v1', 'Duel, premier à 10'], ['ffa', '💀 Chacun pour soi', '2 à 4, premier à 15'], ['2v2', '👥 2v2', 'Équipes, première à 20']];
       let h = '<div class="cols coopcols"><div class="panel"><h3 class="sec">Créer une partie</h3>' +
@@ -54,22 +64,26 @@ G.UI = (function () {
           '<div class="modes">' + ['zombies', 'soldats'].map((t) => '<button class="ctype gtype' + (coopType === t ? ' active' : '') + '" data-t="' + t + '"><b>' + (t === 'soldats' ? '🎖 Soldats' : '🧟 Zombies') + '</b></button>').join('') + '</div>') +
         '<div class="maps cmaps">' + G.Maps.list.map((m) => '<button class="mapcard' + (m.id === coopMap ? ' active' : '') + '" data-cmap="' + m.id + '"><div class="thumb" style="background-image:url(' + thumb(m.id) + ')"></div><div class="info"><h3>' + m.name + '</h3></div></button>').join('') + '</div>' +
         '<div class="launch"><button id="btnCoopCreate" class="big">Créer le salon</button></div></div>' +
-        '<div class="panel"><h3 class="sec">Rejoindre une partie</h3><div id="coopGames"></div>' +
-        '<div class="joinrow"><input id="coopCode" maxlength="4" placeholder="CODE" autocomplete="off"><button class="act" id="btnCoopJoin">Rejoindre</button></div>' +
+        '<div class="panel"><h3 class="sec">Rejoindre une partie</h3><div class="cstatus" id="coopStatus"></div><div id="coopGames"></div>' +
+        '<div class="joinrow"><input id="coopCode" maxlength="12" placeholder="CODE" autocomplete="off" spellcheck="false"><button class="act" id="btnCoopJoin">Rejoindre</button></div><div class="cwarn hidden" id="coopJoinErr"></div>' +
         '<p class="hint">Pseudo : <b>' + G.esc(R.profile.name) + '</b> (modifiable dans Options). Vos amis doivent ouvrir cette même page (lien partagé) pour voir vos parties.</p></div></div>';
       body.innerHTML = h;
       body.querySelectorAll('.ctype').forEach((b) => b.addEventListener('click', () => { coopType = b.dataset.t; G.Audio.S.click(); coopView = ''; renderCoop(); }));
       body.querySelectorAll('.cvs').forEach((b) => b.addEventListener('click', () => { coopVs = b.dataset.vs; G.Audio.S.click(); coopView = ''; renderCoop(); }));
       body.querySelectorAll('[data-cmap]').forEach((b) => b.addEventListener('click', () => { coopMap = b.dataset.cmap; G.Audio.S.click(); coopView = ''; renderCoop(); }));
       $('btnCoopCreate').addEventListener('click', () => { G.Audio.init(); C.create(coopMap, coopType, coopVs || null); });
-      const join = () => { const c = $('coopCode').value.trim().toLowerCase(); if (c.length < 4) { G.Audio.S.deny(); return; } C.join(c); };
+      const join = () => {
+        const c = $('coopCode').value.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (c.length !== 4) { G.Audio.S.deny(); const er = $('coopJoinErr'); er.textContent = 'Le code fait 4 caractères (par exemple K7MP).'; er.classList.remove('hidden'); $('coopCode').focus(); return; }
+        G.Audio.init(); C.join(c);
+      };
       $('btnCoopJoin').addEventListener('click', join);
       $('coopCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
       renderCoopLists(C);
       return;
     }
     // salon d'attente
-    body.innerHTML = '<div class="panel coopRoom"><div class="ccode">Salon <b>' + G.esc(C.code.toUpperCase()) + '</b></div><div class="csub" id="coopSub"></div>' +
+    body.innerHTML = '<div class="panel coopRoom"><div class="ccode">Salon <b>' + G.esc(C.code.toUpperCase()) + '</b></div><div class="csub" id="coopSub"></div><div class="cstatus" id="coopStatus"></div><div class="cwarn hidden" id="coopWarn"></div>' +
       '<div id="coopMembers"></div><div class="btnrow">' + (C.vs === '2v2' ? '<button class="act" id="btnCoopTeam">Changer d\'équipe</button>' : '') + (C.role === 'host' ? '<button class="act big" id="btnCoopStart">Lancer la partie</button>' : '<span class="hint" id="coopWait">En attente du lancement par l\'hôte…</span>') +
       '<button class="act" id="btnCoopLeave">Quitter le salon</button></div>' +
       '<p class="hint">Donnez le code <b>' + G.esc(C.code.toUpperCase()) + '</b> à vos amis : ils le saisissent dans « Rejoindre une partie ». Jusqu\'à ' + C.maxPlayers(C.vs) + ' joueurs ; on peut aussi rejoindre une partie en cours.</p></div>';
@@ -79,6 +93,17 @@ G.UI = (function () {
     renderCoopLists(C);
   }
   function renderCoopLists(C) {
+    const cs = $('coopStatus');
+    if (cs) {
+      const n = C.viewers(), txt = C.connected ? '● Connecté au salon — ' + n + ' personne' + (n > 1 ? 's' : '') + ' sur la page (vous compris)' + (n <= 1 ? ' : vos amis n\'apparaissent pas encore' : '') : '○ Connexion au salon en ligne…';
+      if (cs.textContent !== txt) { cs.textContent = txt; cs.classList.toggle('off', !C.connected || n <= 1); }
+    }
+    const cw = $('coopWarn');
+    if (cw) {
+      const miss = C.hostMissing();
+      cw.classList.toggle('hidden', !miss);
+      if (miss) { const vis = C.games().map((x) => x.code.toUpperCase()); const t = 'Aucune partie « ' + C.code.toUpperCase() + ' » trouvée. ' + (vis.length ? 'Parties visibles : ' + vis.join(', ') + '.' : 'Aucune partie visible : votre ami doit avoir la page ouverte, être connecté à son compte Claude et avoir été invité via le menu Partager (le lien public ne donne pas accès au salon).') + ' Quittez le salon et réessayez.'; if (cw.textContent !== t) cw.textContent = t; }
+    }
     const gl = $('coopGames');
     if (gl) {
       const list = C.games();
