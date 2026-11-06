@@ -27,11 +27,11 @@ G.UI = (function () {
   }
 
   // ---------- Coop en ligne ----------
-  let coopMap = 'village', coopType = 'zombies', coopVs = '', coopView = '', coopBound = false;
+  let coopMap = 'village', coopType = 'zombies', coopVs = '', coopView = '', coopBound = false, manualAnswer = '';
   const modeName = (vs) => (vs && G.VS_MODES[vs] ? G.VS_MODES[vs].name : 'Coop');
   const mapName = (id) => (G.Maps.list.find((m) => m.id === id) || {}).name || id;
   const typeName = (t) => (t === 'soldats' ? 'Soldats' : 'Zombies');
-  function coopState(C) { return !C.ready ? 'wait' : !C.available ? 'na' : C.roomError ? 'denied' : C.code ? 'room:' + C.code + ':' + (C.vs || '') : 'lobby'; }
+  function coopState(C) { return C.code ? 'room:' + C.code + ':' + (C.vs || '') + ':' + C.role : 'lobby'; }
   function renderCoop() {
     const C = G.game && G.game.coop, body = $('coopBody');
     if (!C || !body) return;
@@ -43,19 +43,6 @@ G.UI = (function () {
     const st = coopState(C);
     if (st === coopView) { renderCoopLists(C); return; }
     coopView = st;
-    if (st === 'wait') { body.innerHTML = '<div class="panel"><p class="hint" style="margin:0">Connexion au salon en ligne…</p></div>'; return; }
-    if (st === 'na') {
-      body.innerHTML = '<div class="panel coopinfo"><h3 class="sec">Salon en ligne indisponible ici</h3>' +
-        '<p>Le coop fonctionne quand le jeu est ouvert sur claude.ai. Pour jouer avec vos amis :</p>' +
-        '<ol><li>Ouvrez le menu <b>Partager</b> de la page et invitez-les (ou envoyez-leur le lien).</li><li>Ils ouvrent le lien en étant connectés à leur compte Claude.</li><li>L\'un de vous crée une partie ici, les autres la rejoignent.</li></ol></div>';
-      return;
-    }
-    if (st === 'denied') {
-      body.innerHTML = '<div class="panel coopinfo"><h3 class="sec">Vous n\'êtes pas admis dans le salon en ligne</h3>' +
-        '<p>Cette page est ouverte sans accès au salon (lien public, ou compte non connecté). Pour jouer ensemble :</p>' +
-        '<ol><li>Le propriétaire de la page ouvre le menu <b>Partager</b> et <b>invite votre adresse e-mail</b> (le lien public seul ne suffit pas).</li><li>Ouvrez la page depuis l\'invitation, connecté à votre compte Claude.</li><li>Rechargez la page, puis rejoignez la partie avec son code.</li></ol></div>';
-      return;
-    }
     if (st === 'lobby') {
       const vsList = [['', '🤝 Coop', 'Contre les vagues, 2 à 4'], ['1v1', '⚔ 1v1', 'Duel, premier à 10'], ['ffa', '💀 Chacun pour soi', '2 à 4, premier à 15'], ['2v2', '👥 2v2', 'Équipes, première à 20']];
       let h = '<div class="cols coopcols"><div class="panel"><h3 class="sec">Créer une partie</h3>' +
@@ -64,9 +51,12 @@ G.UI = (function () {
           '<div class="modes">' + ['zombies', 'soldats'].map((t) => '<button class="ctype gtype' + (coopType === t ? ' active' : '') + '" data-t="' + t + '"><b>' + (t === 'soldats' ? '🎖 Soldats' : '🧟 Zombies') + '</b></button>').join('') + '</div>') +
         '<div class="maps cmaps">' + G.Maps.list.map((m) => '<button class="mapcard' + (m.id === coopMap ? ' active' : '') + '" data-cmap="' + m.id + '"><div class="thumb" style="background-image:url(' + thumb(m.id) + ')"></div><div class="info"><h3>' + m.name + '</h3></div></button>').join('') + '</div>' +
         '<div class="launch"><button id="btnCoopCreate" class="big">Créer le salon</button></div></div>' +
-        '<div class="panel"><h3 class="sec">Rejoindre une partie</h3><div class="cstatus" id="coopStatus"></div><div id="coopGames"></div>' +
+        '<div class="panel"><h3 class="sec">Rejoindre une partie</h3>' +
+        '<p class="hint" style="margin-top:0">Entrez le code à 4 caractères donné par votre ami (il doit avoir créé le salon et le garder ouvert).</p>' +
         '<div class="joinrow"><input id="coopCode" maxlength="12" placeholder="CODE" autocomplete="off" spellcheck="false"><button class="act" id="btnCoopJoin">Rejoindre</button></div><div class="cwarn hidden" id="coopJoinErr"></div>' +
-        '<p class="hint">Pseudo : <b>' + G.esc(R.profile.name) + '</b> (modifiable dans Options). Vos amis doivent ouvrir cette même page (lien partagé) pour voir vos parties.</p><details class="cdiag"><summary>Diagnostic du salon</summary><div id="coopDiag"></div></details></div></div>';
+        '<details class="cdiag"><summary>Le code ne marche pas ? Invitation manuelle</summary><p>Demandez à l\'hôte une <b>invitation</b> (bouton dans son salon), collez-la ici, puis renvoyez-lui la <b>réponse</b> qui s\'affiche.</p>' +
+        '<textarea id="manIn" rows="3" placeholder="Collez l\'invitation ici"></textarea><button class="act" id="btnManJoin">Lire l\'invitation</button><div class="cwarn hidden" id="manErr"></div></details>' +
+        '<p class="hint">Pseudo : <b>' + G.esc(R.profile.name) + '</b> (modifiable dans Options). La connexion se fait directement entre vos navigateurs : aucun compte ni invitation claude.ai n\'est nécessaire, il suffit d\'ouvrir le jeu.</p></div></div>';
       body.innerHTML = h;
       body.querySelectorAll('.ctype').forEach((b) => b.addEventListener('click', () => { coopType = b.dataset.t; G.Audio.S.click(); coopView = ''; renderCoop(); }));
       body.querySelectorAll('.cvs').forEach((b) => b.addEventListener('click', () => { coopVs = b.dataset.vs; G.Audio.S.click(); coopView = ''; renderCoop(); }));
@@ -79,6 +69,11 @@ G.UI = (function () {
       };
       $('btnCoopJoin').addEventListener('click', join);
       $('coopCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
+      $('btnManJoin').addEventListener('click', async () => {
+        const er = $('manErr'); er.classList.add('hidden');
+        try { G.Audio.init(); manualAnswer = await C.manualJoin($('manIn').value); coopView = ''; renderCoop(); }
+        catch (e) { er.textContent = 'Invitation illisible : copiez-la en entier, sans rien ajouter.'; er.classList.remove('hidden'); }
+      });
       renderCoopLists(C);
       return;
     }
@@ -86,32 +81,43 @@ G.UI = (function () {
     body.innerHTML = '<div class="panel coopRoom"><div class="ccode">Salon <b>' + G.esc(C.code.toUpperCase()) + '</b></div><div class="csub" id="coopSub"></div><div class="cstatus" id="coopStatus"></div><div class="cwarn hidden" id="coopWarn"></div>' +
       '<div id="coopMembers"></div><div class="btnrow">' + (C.vs === '2v2' ? '<button class="act" id="btnCoopTeam">Changer d\'équipe</button>' : '') + (C.role === 'host' ? '<button class="act big" id="btnCoopStart">Lancer la partie</button>' : '<span class="hint" id="coopWait">En attente du lancement par l\'hôte…</span>') +
       '<button class="act" id="btnCoopLeave">Quitter le salon</button></div>' +
-      '<p class="hint">Donnez le code <b>' + G.esc(C.code.toUpperCase()) + '</b> à vos amis : ils le saisissent dans « Rejoindre une partie ». Jusqu\'à ' + C.maxPlayers(C.vs) + ' joueurs ; on peut aussi rejoindre une partie en cours.</p><details class="cdiag"><summary>Diagnostic du salon</summary><div id="coopDiag"></div></details></div>';
+      (C.role === 'host' ? '<p class="hint">Donnez le code <b>' + G.esc(C.code.toUpperCase()) + '</b> à vos amis : ils l\'entrent dans « Rejoindre une partie ». Jusqu\'à ' + C.maxPlayers(C.vs) + ' joueurs ; on peut aussi rejoindre une partie en cours. Gardez cette page ouverte.</p>' +
+        '<details class="cdiag" id="manBox"' + (C.netStatus() === 'noserver' ? ' open' : '') + '><summary>Le code ne marche pas ? Invitation manuelle (une par ami)</summary>' +
+        '<p>1. Créez une invitation et envoyez-la à votre ami (Discord, SMS…). 2. Il la colle dans « Invitation manuelle » et vous renvoie sa réponse. 3. Collez sa réponse ici.</p>' +
+        '<button class="act" id="btnManOffer">Créer une invitation</button><textarea id="manOut" rows="3" readonly placeholder="L\'invitation apparaîtra ici"></textarea><button class="act" id="btnManCopy">Copier l\'invitation</button>' +
+        '<textarea id="manAns" rows="3" placeholder="Collez la réponse de votre ami ici"></textarea><button class="act" id="btnManAccept">Valider la réponse</button><div class="cwarn hidden" id="manErr"></div></details>'
+      : manualAnswer ? '<div class="cdiag"><p><b>Envoyez cette réponse à l\'hôte</b> : il la colle dans son salon pour vous connecter.</p><textarea id="manOut" rows="3" readonly></textarea><button class="act" id="btnManCopy">Copier la réponse</button></div>' : '') + '</div>';
     if ($('btnCoopStart')) $('btnCoopStart').addEventListener('click', () => { G.Audio.init(); C.launch(); });
-    $('btnCoopLeave').addEventListener('click', () => { C.leave(); });
+    $('btnCoopLeave').addEventListener('click', () => { manualAnswer = ''; C.leave(); });
     if ($('btnCoopTeam')) $('btnCoopTeam').addEventListener('click', () => { G.Audio.S.click(); C.switchTeam(); });
+    if (manualAnswer && C.role === 'client') $('manOut').value = manualAnswer;
+    const copy = () => { const t = $('manOut'); t.select(); try { navigator.clipboard.writeText(t.value).catch(() => document.execCommand('copy')); } catch (e) { document.execCommand('copy'); } G.Audio.S.click(); };
+    if ($('btnManCopy')) $('btnManCopy').addEventListener('click', copy);
+    if ($('btnManOffer')) $('btnManOffer').addEventListener('click', async () => { $('btnManOffer').disabled = true; $('manOut').value = 'Préparation…'; try { $('manOut').value = await C.manualInvite(); } catch (e) { $('manOut').value = 'Impossible de créer l\'invitation sur ce navigateur.'; } $('btnManOffer').disabled = false; });
+    if ($('btnManAccept')) $('btnManAccept').addEventListener('click', async () => {
+      const er = $('manErr'); er.classList.add('hidden');
+      try { await C.manualAccept($('manAns').value); $('manAns').value = ''; $('manOut').value = ''; er.textContent = 'Réponse acceptée : connexion en cours…'; er.classList.remove('hidden'); }
+      catch (e) { er.textContent = 'Réponse illisible, ou aucune invitation en attente : créez une nouvelle invitation.'; er.classList.remove('hidden'); }
+    });
     renderCoopLists(C);
   }
   function renderCoopLists(C) {
     const cs = $('coopStatus');
     if (cs) {
-      const n = C.viewers(), on = C.isConnected(), long = performance.now() - (C.initT || 0) > 8000;
-      const txt = on ? '● Connecté au salon — ' + n + ' personne' + (n > 1 ? 's' : '') + ' sur la page (vous compris)' + (n <= 1 ? ' : personne d\'autre n\'est visible' : '')
-        : long ? '○ Pas connecté au salon en ligne : cette page n\'y est pas admise (ouvrez-la depuis une invitation par e-mail, connecté à votre compte Claude, puis rechargez)' : '○ Connexion au salon en ligne…';
-      if (cs.textContent !== txt) { cs.textContent = txt; cs.classList.toggle('off', !on || n <= 1); }
-    }
-    const dg = $('coopDiag');
-    if (dg) {
-      const d = C.diag();
-      const html = '<div>Connecté : <b>' + (d.connected ? 'oui' : 'non') + '</b>' + (d.error ? ' — erreur : <b>' + G.esc(d.error) + '</b>' : '') + ' — personnes vues : <b>' + d.peers + '</b> — votre identifiant : ' + G.esc(d.tag) + ' — depuis ' + d.since + ' s</div>' +
-        (d.rows.length ? '<ul>' + d.rows.map((r) => '<li>' + G.esc(r) + '</li>').join('') + '</ul>' : '<div>Aucune personne visible (même pas vous) : la page n\'a pas encore de réponse du salon.</div>');
-      if (dg.innerHTML !== html) dg.innerHTML = html;
-    }
-    const cw = $('coopWarn');
-    if (cw) {
-      const miss = C.hostMissing();
-      cw.classList.toggle('hidden', !miss);
-      if (miss) { const vis = C.games().map((x) => x.code.toUpperCase()); const t = 'Aucune partie « ' + C.code.toUpperCase() + ' » trouvée. ' + (vis.length ? 'Parties visibles : ' + vis.join(', ') + '.' : 'Aucune partie visible : votre ami doit avoir la page ouverte, être connecté à son compte Claude et avoir été invité via le menu Partager (le lien public ne donne pas accès au salon).') + ' Quittez le salon et réessayez.'; if (cw.textContent !== t) cw.textContent = t; }
+      const n = C.peers.length, ns = C.netStatus(), host = C.role === 'host';
+      const T = {
+        starting: '○ Ouverture du salon…',
+        ready: '● Salon ouvert' + (n > 1 ? ' — ' + (n - 1) + ' ami' + (n > 2 ? 's' : '') + ' connecté' + (n > 2 ? 's' : '') : ' — en attente de vos amis'),
+        connecting: '○ Connexion à la partie…',
+        connected: '● Connecté à la partie',
+        nogame: '✕ Aucune partie avec ce code : vérifiez-le, et que l\'hôte a bien son salon ouvert.',
+        noserver: '✕ Le serveur de mise en relation ne répond pas' + (host ? ' : utilisez l\'invitation manuelle ci-dessous.' : ' : demandez une invitation manuelle à l\'hôte (Quitter le salon, puis « Invitation manuelle »).'),
+        lost: '✕ Connexion perdue avec l\'hôte.',
+        idle: '',
+      };
+      const txt = host && n > 1 ? '● Salon ouvert — ' + (n - 1) + ' ami' + (n > 2 ? 's' : '') + ' connecté' + (n > 2 ? 's' : '') : (T[ns] !== undefined ? T[ns] : ns);
+      if (cs.textContent !== txt) { cs.textContent = txt; cs.classList.toggle('off', !(ns === 'ready' || ns === 'connected' || n > 1)); }
+      const mb = $('manBox'); if (mb && ns === 'noserver' && !mb.dataset.auto) { mb.dataset.auto = 1; mb.open = true; }
     }
     const gl = $('coopGames');
     if (gl) {

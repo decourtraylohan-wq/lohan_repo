@@ -30,23 +30,31 @@ G.Coop = class {
   get isHost() { return this.active && this.role === 'host'; }
   get isClient() { return this.active && this.role === 'client'; }
 
-  async init() {
-    let room = null;
-    try { room = window.claude && window.claude.use ? await window.claude.use('room') : null; } catch (e) { room = null; }
-    this.ready = true;
-    if (!room) { this.available = false; this.changed(); return; }
-    this.room = room; this.available = true; this.initT = performance.now();
-    const fail = (e) => { this.roomError = (e && e.code) || 'error'; this.changed(); };
+  init() {
+    // connexion directe entre navigateurs (js/net.js) : marche pour tout le monde, sans compte ni invitation
+    const room = this.room = new G.NetRoom();
+    this.ready = true; this.available = true; this.initT = performance.now();
+    room.onStatus = (st) => { if (st === 'taken' && this.role === 'host' && !this.started) this.create(this.mapId, this.type, this.vs); else this.changed(); };
     room.onPeers((c) => {
       this.peers = c.peers;
       for (const p of c.peers) if (p.isMe && p.sameTab) this.myPeer = p.peer;
       for (const p of c.left) this.dropPeer(p.peer);
       this.changed();
-    }, fail);
-    room.onConnection((ok) => { this.connected = ok; if (ok) this.connectedOnce = true; this.changed(); }, fail);
+    });
+    room.onConnection((ok) => { this.connected = ok; this.changed(); });
     this.push({ v: 1, id: this.tag, nick: this.nick(), g: null, role: null, lb: null });
-    // la présence complète est renvoyée régulièrement hors partie (rattrape un envoi perdu)
-    setInterval(() => { if (this.room && !this.active && !this.roomError) this.room.presence(Object.assign({}, this.mine, { nick: this.nick() })).catch((e) => this.pushFailed(e)); }, 3000);
+  }
+  netStatus() { return this.room ? this.room.status : 'idle'; }
+  // invitation manuelle
+  async manualInvite() { return this.room.manualOffer(this.code); }
+  async manualAccept(t) { return this.room.manualAccept(t); }
+  async manualJoin(token) {
+    const r = await this.room.manualAnswer(token);
+    const code = String(r.code).toLowerCase();
+    this.code = code; this.role = 'client'; this.started = false; this.vs = null; this.myTeam = null; this.joinT = performance.now();
+    this.push({ nick: this.nick(), g: code, role: 'client', lb: null, tm: null, vs: null, sc: null });
+    this.changed();
+    return r.token;
   }
   pushFailed(e) {
     const c = e && e.code;
@@ -99,6 +107,7 @@ G.Coop = class {
     this.role = 'host'; this.mapId = mapId; this.type = type; this.started = false;
     this.vs = G.VS_MODES[vs] ? vs : null; this.myTeam = this.vs === '2v2' ? 0 : null;
     this.push({ nick: this.nick(), g: this.code, role: 'host', lb: this.lobbyInfo(0), tm: this.myTeam, vs: null, sc: null });
+    this.room.host(this.code);
     this.changed();
   }
   lobbyInfo(st) { return { m: this.mapId, t: this.type, st, vs: this.vs }; }
@@ -117,6 +126,7 @@ G.Coop = class {
     this.joinT = performance.now();
     this.code = code; this.role = 'client'; this.started = false; this.vs = null; this.myTeam = null;
     this.push({ nick: this.nick(), g: code, role: 'client', lb: null, tm: null, vs: null, sc: null });
+    this.room.join(code);
     this.changed();
     return true;
   }
@@ -146,6 +156,7 @@ G.Coop = class {
     this.hOut = []; this.xOut = []; this.dOut = []; this.kOut = []; this.fxOut = []; this.shOut = []; this.peOut = []; this.pkOut = [];
     this.last = { d: 0, k: 0, fx: 0, sh: 0, w: 0, pe: 0 };
     this.push({ g: null, role: null, lb: null, me: null, s: null, h: null, x: null, car: null, wp: null, pk: null, tm: null, vs: null, sc: null, pv: null, dth: null });
+    this.room.close();
     this.changed();
   }
   // fin de partie : on reste dans le salon pour relancer avec la même équipe
