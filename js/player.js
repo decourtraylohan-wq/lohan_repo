@@ -121,15 +121,18 @@ G.Player = class {
     const cone = this.ads > 0.5 ? 0.16 : 0.12; // ≈ 9° en visant, 7° au jugé
     const look = this.lookDir();
     let best = null;
+    const angTo = (p) => { const d = p.clone().sub(this.eye), L = d.length(); return { L, ang: Math.acos(G.clamp(look.dot(d.divideScalar(Math.max(L, 1e-3))), -1, 1)) }; };
     for (const e of game.enemies) {
       if (e.dead) continue;
-      const p = new THREE.Vector3(e.pos.x, e.centerY() + 0.25 * Math.min(e.size, 1.6), e.pos.z);
-      const d = p.clone().sub(this.eye), L = d.length();
-      if (L > 70 || L < 0.8) continue;
-      const ang = Math.acos(G.clamp(look.dot(d.divideScalar(L)), -1, 1));
+      // deux points possibles : la tête et le torse ; on vise celui dont le viseur est le plus proche (avec un net avantage à la tête)
+      const head = e.headPos(), chest = new THREE.Vector3(e.pos.x, e.centerY() + 0.2 * Math.min(e.size, 1.6), e.pos.z);
+      const h = angTo(head), c = angTo(chest);
+      if (h.L > 70 || h.L < 0.8) continue;
+      const useHead = h.ang * 0.55 <= c.ang;
+      const p = useHead ? head : chest, ang = useHead ? h.ang : c.ang;
       if (ang > cone || (best && ang >= best.ang)) continue;
       if (!w.lineOfSight(this.eye, p)) continue;
-      best = { e, p, ang, cone };
+      best = { e, p, ang, cone, head: useHead };
     }
     return best;
   }
@@ -292,7 +295,8 @@ G.Player = class {
       if (this.plateT <= 0) { this.armor = Math.min(this.maxArmor, this.armor + 50); this.plates--; G.Audio.S.plate(); }
     }
     const fury = game.power.fury > 0;
-    if (game.buildItem) { if (this.mouse.left && !this.triggerHeld) { game.placeBuild(); this.triggerHeld = true; } if (!this.mouse.left) this.triggerHeld = false; }
+    // construction : le clic pose l'objet ; tant qu'il n'est pas relâché, l'arme ne tire pas
+    if (game.buildItem || this.buildClick) { if (game.buildItem && this.mouse.left && !this.triggerHeld) { game.placeBuild(); this.triggerHeld = true; this.buildClick = true; } if (!this.mouse.left) { this.triggerHeld = false; this.buildClick = false; } }
     else if (this.mouse.left && this.plateT <= 0 && this.fireCD <= 0 && this.reloadT <= 0 && this.switchT <= 0 && this.meleeT <= 0 && (st.auto || !this.triggerHeld)) {
       if (s.mag > 0 || fury) {
         const rate = st.rpm * (this.perks.has('rafale') ? 1.35 : 1);
@@ -439,9 +443,13 @@ G.Player = class {
   throwGrenade() {
     if (this.grenades <= 0 || this.grenadeCD > 0) return;
     this.grenades--; this.grenadeCD = 0.8;
+    const game = this.game;
     const dir = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ'));
-    const vel = dir.multiplyScalar(17); vel.y += 3.5;
-    this.game.spawnProjectile('grenade', this.eye.clone(), vel, 420, 'player');
+    const vel = dir.multiplyScalar(15); vel.y += 4;
+    // dégâts qui suivent la résistance des ennemis : une grenade bien placée tue toujours un ennemi de base
+    const base = game.gameType === 'soldats' ? game.soldierBaseHp() : game.zombieBaseHp();
+    game.spawnProjectile('grenade', this.eye.clone().addScaledVector(dir.clone().normalize(), 0.4), vel, Math.max(420, base * 1.8), 'player');
+    G.Audio.S.melee();
   }
   lookDir() { return new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ')); }
 };

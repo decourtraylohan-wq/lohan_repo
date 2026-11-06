@@ -620,19 +620,22 @@ G.World = class {
     return best < 0 ? null : [n.nx[best], n.ny[best], n.nz[best]];
   }
   // champ de flux réservé aux grands boss (ne passent que dans les espaces larges)
-  computeFlowBig(x, y, z) {
+  // potentiel des grands boss : chaque case large reçoit (distance « normale » au joueur × 1000), puis on propage par les
+  // seules cases larges (Dijkstra) → le boss rejoint la case large atteignable la plus proche du joueur, sans cul-de-sac
+  // (au pied d'une tour où il ne passe pas, par exemple)
+  computeFlowBig() {
     const n = this.nav; if (!n) return;
-    n.distBig.fill(-1);
-    let start = this.nodeNear(x, y, z);
-    if (start < 0) return;
-    const q = n.queue; let qh = 0, qt = 0;
-    n.distBig[start] = 0; q[qt++] = start;
-    while (qh < qt) {
-      const c = q[qh++], cd = n.distBig[c] + 1;
-      for (let k = n.inStart[c]; k < n.inStart[c + 1]; k++) {
-        const a = n.inList[k];
-        if (n.distBig[a] !== -1 || !n.big[a] || n.blocked[a] > 0) continue;
-        n.distBig[a] = cd; q[qt++] = a;
+    const D = n.distBig; D.fill(-1);
+    const heapK = [], heapV = [];
+    const push = (k, v) => { heapK.push(k); heapV.push(v); let i = heapK.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heapK[p] <= heapK[i]) break; [heapK[p], heapK[i]] = [heapK[i], heapK[p]]; [heapV[p], heapV[i]] = [heapV[i], heapV[p]]; i = p; } };
+    const pop = () => { const k = heapK[0], v = heapV[0], lk = heapK.pop(), lv = heapV.pop(); if (heapK.length) { heapK[0] = lk; heapV[0] = lv; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heapK.length && heapK[l] < heapK[m]) m = l; if (r < heapK.length && heapK[r] < heapK[m]) m = r; if (m === i) break; [heapK[m], heapK[i]] = [heapK[i], heapK[m]]; [heapV[m], heapV[i]] = [heapV[i], heapV[m]]; i = m; } } return [k, v]; };
+    for (let i = 0; i < n.N; i++) if (n.big[i] && n.dist[i] >= 0 && !(n.blocked[i] > 0)) { D[i] = n.dist[i] * 1000; push(D[i], i); }
+    while (heapK.length) {
+      const [k, c] = pop(); if (k !== D[c]) continue;
+      for (let e = n.inStart[c]; e < n.inStart[c + 1]; e++) {
+        const a = n.inList[e];
+        if (!n.big[a] || n.blocked[a] > 0) continue;
+        if (D[a] === -1 || k + 1 < D[a]) { D[a] = k + 1; push(k + 1, a); }
       }
     }
   }

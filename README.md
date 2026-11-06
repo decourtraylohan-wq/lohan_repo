@@ -38,7 +38,10 @@ puis va sur http://localhost:8000.
   - occlusion ambiante, végétation (herbes hautes, fleurs, blé).
 - **Sons synthétisés** : détonations en plusieurs couches, réverbération, sons spatialisés (gauche/droite et distance), sifflement des balles qui vous ratent, ambiance par carte, battements de cœur quand la vie est basse.
 - **Déplacements** : sprint, glissade (C pendant un sprint), accroupi (C maintenu, plus précis et plus dur à toucher), couteau avec fente et coup fatal dans le dos (V ou clic molette).
-- **Assistance de visée légère** (réglable dans Options) : le viseur ralentit sur un ennemi, se cale en partie dessus quand on épaule et l'accompagne doucement pendant qu'on tire, uniquement s'il est visible et proche du viseur.
+- **Assistance de visée légère** (réglable dans Options) : le viseur ralentit sur un ennemi, se cale en partie dessus quand on épaule et l'accompagne doucement pendant qu'on tire, uniquement s'il est visible et proche du viseur. Elle vise la tête dès que le viseur en est assez proche.
+- **Vie basse** : plus la vie baisse, plus le bord de l'écran rougit et plus le cœur bat fort et vite. À la mort : un impact sourd puis une petite musique.
+- **Grenades** : leurs dégâts suivent la résistance des ennemis (une grenade bien placée tue toujours un ennemi de base), elles roulent moins et explosent au contact d'un ennemi.
+- **Grands boss** : s'ils ne passent pas (tour, immeuble), ils viennent au plus près, au pied du bâtiment, et lancent des blocs de pierre en cloche sur le joueur au lieu de se téléporter.
 - **Armure** : 3 plaques de 50 qui absorbent 75 % des dégâts (touche X pour en mettre une). Une barre bleue au-dessus de la vie indique où elle en est.
 - **Constructions** : à fabriquer avec des points aux établis ⚒ placés dans les maisons, puis à poser avec B et un clic.
   - barricade de sacs de sable : abri bas derrière lequel s'accroupir ;

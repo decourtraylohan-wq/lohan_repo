@@ -282,10 +282,19 @@ G.Enemy = class {
       if (direct || this.T.floating) moveDir.copy(toP).normalize();
       else {
         const nxt = this.big ? w.nextStepBig(this.pos.x, this.pos.y, this.pos.z) : w.nextStep(this.pos.x, this.pos.y, this.pos.z);
-        // grand boss sans chemin assez large : il réapparaît ailleurs plutôt que de forcer le passage
-        if (this.big) { this.bigLost = !nxt && dist > 6 ? (this.bigLost || 0) + dt : 0; if (this.bigLost > 3) { this.bigLost = 0; this.respawnFar(); } }
+        // grand boss qui ne passe pas (tour, immeuble) : il attend au plus près et assiège au lieu de se téléporter
+        if (this.big) {
+          // vrai siège : au point large le plus proche du joueur ; sinon il est coincé sur une case étroite → il réapparaît
+          const here = w.nodeNear(this.pos.x, this.pos.y, this.pos.z), onBig = here >= 0 && w.nav.big[here] && w.nav.distBig[here] >= 0;
+          this.siege = !nxt && dist > 6 && onBig;
+          this.bigLost = !nxt && dist > 6 && !onBig ? (this.bigLost || 0) + dt : 0;
+          if (this.bigLost > 2.5) { this.bigLost = 0; this.respawnFar(); }
+          // siège inutile (ni lancer ni tir possible depuis ce point) : il réapparaît là où il peut s'approcher davantage
+          this.siegeIdle = this.siege && !(this.soldier && this.los) ? (this.siegeIdle || 0) + dt : 0;
+          if (this.siegeIdle > 8 && dist > 12) { this.siegeIdle = 0; this.respawnFar(true); }
+        }
         if (nxt) { moveDir.set(nxt[0] + 0.5 - this.pos.x, 0, nxt[2] + 0.5 - this.pos.z).normalize(); this.lastStep = nxt; }
-        else moveDir.copy(toP).normalize();
+        else if (!this.siege) moveDir.copy(toP).normalize();
       }
     }
     // échelle : la prochaine case est bien plus haute (ou plus basse) → on se place pile dans l'échelle, puis on grimpe ou on descend
@@ -298,6 +307,17 @@ G.Enemy = class {
       }
     }
 
+    // siège : le boss lance des blocs de pierre sur le joueur qu'il ne peut pas atteindre
+    if (this.big && this.siege && !this.soldier && !frozen) {
+      this.rockT = (this.rockT ?? 1.2) - dt;
+      if (this.rockT <= 0) {
+        const from = this.pos.clone(); from.y += this.h + 0.3;
+        // tir direct, ou en cloche par-dessus un parapet si le joueur est à ciel ouvert
+        const high = from.clone(); high.y += 4; const over = pl.eye.clone(); over.y += 2.5;
+        if ((w.lineOfSight(from, pl.eye) || (dist < 38 && w.lineOfSight(high, over) && w.lineOfSight(over, pl.eye))) && game.throwBoulder(this, from)) { this.rockT = 2.6; this.siegeIdle = 0; }
+        else { this.rockT = 0.7; if (Math.random() < 0.15) G.Audio.S.growl(this.pos); }
+      }
+    } else this.rockT = 1.2;
     // attaque au corps à corps
     const reach = 1.25 + 0.35 * Math.min(this.size, 2.6);
     this.atkT -= dt;
@@ -397,7 +417,7 @@ G.Enemy = class {
     // détection de blocage
     this.stuckT += dt;
     if (this.stuckT > 5) {
-      const idle = this.soldier ? (this.state === 'move' && !this.los) || (!this.los && game.time - (this.lastSeen || 0) > 10) : (this.state === 'chase' && !this.T.ranged);
+      const idle = !this.siege && (this.soldier ? (this.state === 'move' && !this.los) || (!this.los && game.time - (this.lastSeen || 0) > 10) : (this.state === 'chase' && !this.T.ranged));
       if (this.pos.distanceTo(this.lastPos) < 1.2 && game.time - this.lastAtk > 5 && idle) this.respawnFar();
       this.stuckT = 0; this.lastPos.copy(this.pos);
     }
@@ -446,11 +466,14 @@ G.Enemy = class {
     return true;
   }
 
-  respawnFar() {
+  respawnFar(better) {
     let sp = this.isBoss ? this.game.pickSpawn(8, 20) : this.game.pickSpawn();
     if (this.big) {
-      const w = this.game.world;
-      for (let i = 0; i < 15; i++) { const c = this.game.pickSpawn(8, 30); if (!c) break; const id = w.nodeNear(c.x, c.y, c.z); if (id >= 0 && w.nav.big[id] && w.nav.distBig[id] >= 0) { sp = c; break; } }
+      const w = this.game.world, here = w.nodeNear(this.pos.x, this.pos.y, this.pos.z), cur = here >= 0 && w.nav.distBig[here] >= 0 ? w.nav.distBig[here] : 1e12;
+      let bestK = better ? cur - 1000 : 1e12, found = null;
+      // point d'apparition d'où il peut s'approcher le plus du joueur
+      for (let i = 0; i < 24; i++) { const c = this.game.pickSpawn(8, 40); if (!c) break; const id = w.nodeNear(c.x, c.y, c.z); if (id >= 0 && w.nav.big[id] && w.nav.distBig[id] >= 0 && w.nav.distBig[id] < bestK) { bestK = w.nav.distBig[id]; found = c; } }
+      if (found) sp = found; else if (better) return;
     }
     if (sp) { this.pos.copy(sp); this.vel.set(0, 0, 0); this.lastPos.copy(sp); }
   }

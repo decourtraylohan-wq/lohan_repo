@@ -114,7 +114,21 @@ G.Audio = (function () {
     headshot() { if (!ctx) return; const d = out(null, 0.6, 0.1); tone(d, 2100, 0.12, 0.18, 'sine', 1900); tone(d, 3150, 0.08, 0.08, 'sine'); noise(d, 0.07, 1200, 2, 0.35); },
     kill() { if (!ctx) return; const d = out(null, 0.5, 0.1); noise(d, 0.18, 600, 1, 0.35, 'lowpass', 0.002, 0, brownBuf); },
     hurt() { if (!ctx) return; const d = out(null, 0.8, 0.05); noise(d, 0.15, 500, 1, 0.5, 'lowpass', 0.002, 0, brownBuf); tone(d, 160, 0.18, 0.25, 'sawtooth', 90); },
-    heartbeat() { if (!ctx) return; const d = out(null, 0.7, 0); tone(d, 55, 0.12, 0.6, 'sine', 40); tone(d, 50, 0.12, 0.45, 'sine', 38, 0.2); },
+    heartbeat(k = 1) { if (!ctx) return; const d = out(null, 0.7 * k, 0); tone(d, 55, 0.12, 0.6, 'sine', 40); tone(d, 50, 0.12, 0.45, 'sine', 38, 0.2); noise(d, 0.08, 120, 1, 0.3 * k, 'lowpass', 0.003, 0, brownBuf); },
+    // mort du joueur : impact sourd, souffle qui s'éteint, puis une petite musique triste (accords et mélodie)
+    playerDeath() {
+      if (!ctx) return;
+      const d = out(null, 1.0, 0.6);
+      noise(d, 0.5, 260, 0.8, 0.9, 'lowpass', 0.003, 0, brownBuf, 60); tone(d, 70, 0.9, 0.7, 'sine', 30);
+      tone(d, 52, 0.3, 0.5, 'sine', 38, 0.55); tone(d, 46, 0.4, 0.35, 'sine', 32, 1.0);
+      const m = out(null, 0.55, 0.9), t0 = 1.3;
+      const pad = (freqs, at, dur) => freqs.forEach((f) => { tone(m, f, dur, 0.07, 'triangle', null, at, 0.5); tone(m, f * 1.003, dur, 0.04, 'sine', null, at, 0.6); });
+      pad([220, 261.6, 329.6], t0, 2.0);          // la mineur
+      pad([174.6, 220, 261.6], t0 + 1.8, 2.0);    // fa
+      pad([130.8, 196, 261.6], t0 + 3.6, 2.0);    // do
+      pad([146.8, 196, 246.9], t0 + 5.4, 2.6);    // sol (suspendu)
+      [[659.3, 0], [587.3, 0.6], [523.3, 1.2], [440, 1.8], [523.3, 2.7], [493.9, 3.3], [440, 3.9], [392, 4.5], [440, 5.4]].forEach(([f, at]) => tone(m, f, at === 5.4 ? 2.4 : 0.85, 0.09, 'sine', f * 0.995, t0 + at, 0.04));
+    },
     groan(pos) {
       if (!ctx) return; const d = out(pos, 0.5, 0.3);
       const f = G.rand(70, 120), dur = G.rand(0.6, 1.1);

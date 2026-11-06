@@ -131,6 +131,7 @@ h3.sec { font-family: 'Bungee', sans-serif; font-weight: 400; letter-spacing: 1p
 #hitmarker { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; opacity: 0; }
 #hitmarker::before, #hitmarker::after { content: ''; position: absolute; left: 12px; top: -2px; width: 2px; height: 30px; background: currentColor; transform: rotate(45deg); box-shadow: 0 0 2px #000; }
 #hitmarker::after { transform: rotate(-45deg); }
+#lowhp { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(120,0,0,0) 30%, rgba(160,0,0,0.45) 62%, rgba(120,0,0,0.92) 100%); }
 #vignette { position: absolute; inset: 0; box-shadow: inset 0 0 180px 40px rgba(180, 0, 0, 0.9); opacity: 0; transition: opacity .15s; }
 #flash { position: absolute; inset: 0; opacity: 0; }
 #dmgdir { position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; transition: opacity .6s; }

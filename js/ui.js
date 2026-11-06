@@ -334,7 +334,11 @@ G.UI = (function () {
     $('hpbar').style.width = (hpP * 100).toFixed(1) + '%';
     $('hpbar').style.background = hpP < 0.35 ? 'linear-gradient(#ff6a5a,#b0150a)' : '';
     setText('hptext', Math.max(0, Math.ceil(d.hp)));
-    $('vignette').style.opacity = Math.max(G.UI._hurt || 0, hpP < 0.35 ? (0.35 - hpP) * 2 : 0).toFixed(2);
+    $('vignette').style.opacity = (G.UI._hurt || 0).toFixed(2);
+    // moins on a de vie, plus le bord de l'écran rougit, au rythme du cœur
+    const danger = G.clamp((0.6 - hpP) / 0.55, 0, 1);
+    G.UI._beat = Math.max(0, (G.UI._beat || 0) - 0.06);
+    $('lowhp').style.opacity = (danger * (0.62 + 0.38 * G.UI._beat)).toFixed(2);
     $('stamina').firstChild.style.width = Math.round(d.stamina * 100) + '%';
     setText('wname', d.weapon);
     setText('mag', d.mag);

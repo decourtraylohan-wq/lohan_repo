@@ -470,7 +470,10 @@ G.Game = class {
     G.Audio.setListener(pl.eye.x, pl.eye.y, pl.eye.z, pl.yaw);
     if (this.warpT > 0) this.warpT -= dt;
     this.beatT = (this.beatT || 0) - dt;
-    if (pl.hp < pl.maxHp * 0.3 && this.beatT <= 0) { this.beatT = 0.9; G.Audio.S.heartbeat(); }
+    {
+      const hpP = pl.hp / pl.maxHp, danger = G.clamp((0.6 - hpP) / 0.55, 0, 1);
+      if (danger > 0 && !pl.dead && this.beatT <= 0) { this.beatT = G.lerp(1.15, 0.42, danger); G.Audio.S.heartbeat(0.35 + danger * 1.1); G.UI._beat = 1; }
+    }
 
     if (this.campaign) this.campaign.update(dt); else this.updateWaves(dt);
     // ennemis
@@ -617,7 +620,8 @@ G.Game = class {
     let p = this.pickSpawn(14, 30) || this.map.playerSpawn.clone();
     if (T.size >= 1.4) {
       this.world.computeFlowBig(this.player.pos.x, this.player.pos.y, this.player.pos.z);
-      for (let i = 0; i < 20; i++) { const c = this.pickSpawn(10, 40); if (!c) break; const id = this.world.nodeNear(c.x, c.y, c.z); if (id >= 0 && this.world.nav.big[id] && this.world.nav.distBig[id] >= 0) { p = c; break; } }
+      let bestK = Infinity;
+      for (let i = 0; i < 40; i++) { const c = this.pickSpawn(10, 40); if (!c) break; const id = this.world.nodeNear(c.x, c.y, c.z); if (id >= 0 && this.world.nav.big[id] && this.world.nav.distBig[id] >= 0 && this.world.nav.distBig[id] < bestK) { bestK = this.world.nav.distBig[id]; p = c; } }
     }
     const b = new G.Enemy(this, T.id, p, { boss: T, hpScale: (1 + 0.6 * cycle) * this.mods.bossHp, cycle });
     this.enemies.push(b);
@@ -901,7 +905,7 @@ G.Game = class {
     if (this.phase === 'over' || this.phase === 'menu') return;
     if (this.campaign) { this.campaign.fail(reason || 'death'); return; }
     this.phase = 'over';
-    G.Audio.S.gameOver();
+    G.Audio.S.playerDeath();
     if (this.curWave && this.waveStats[this.waveStats.length - 1] !== this.curWave) { this.curWave.t = this.time - this.curWave.t0; this.curWave.died = true; this.waveStats.push(this.curWave); }
     const s = this.stats;
     const run = {
@@ -927,7 +931,7 @@ G.Game = class {
   endMission(success, res) {
     this.phase = 'over';
     G.Voice.stop();
-    if (success) G.Audio.S.rankUp(); else G.Audio.S.gameOver();
+    if (success) G.Audio.S.rankUp(); else if (res.reason === 'death') G.Audio.S.playerDeath(); else G.Audio.S.gameOver();
     if (document.pointerLockElement) document.exitPointerLock();
     G.UI.showHUD(false);
     setTimeout(() => G.UI.showMissionEnd(res), 300);
@@ -1040,10 +1044,11 @@ G.Game = class {
     if (type === 'spit') mesh = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 0.25), new THREE.MeshBasicMaterial({ color: 0x80ff40 }));
     else if (type === 'orb') mesh = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), new THREE.MeshBasicMaterial({ color: 0xb050ff }));
     else if (type === 'energy') mesh = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.5), new THREE.MeshBasicMaterial({ color: extra.up ? 0xff60ff : 0x60ffb0 }));
+    else if (type === 'boulder') mesh = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.7, 0.75), new THREE.MeshLambertMaterial({ color: 0x7d7a74 }));
     else mesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshLambertMaterial({ color: type === 'egrenade' ? 0x5a3a2a : 0x3a4a2a }));
     mesh.position.copy(pos);
     this.scene.add(mesh);
-    this.projectiles.push(Object.assign({ type, pos: pos.clone(), vel: vel.clone(), dmg, owner, mesh, life: type === 'grenade' || type === 'egrenade' ? 2.2 : 6 }, extra));
+    this.projectiles.push(Object.assign({ type, pos: pos.clone(), vel: vel.clone(), dmg, owner, mesh, life: type === 'grenade' ? 1.8 : type === 'egrenade' ? 2.2 : 6 }, extra));
   }
   updateProjectiles(dt) {
     const w = this.world, pl = this.player;
@@ -1051,13 +1056,13 @@ G.Game = class {
       const p = this.projectiles[i];
       p.life -= dt;
       let done = p.life <= 0;
-      if (p.type === 'grenade' && done) { this.explode(p.pos.clone(), 4.5, p.dmg, 'player', 0xff8030); }
+      if (p.type === 'grenade' && done) { this.explode(p.pos.clone(), 5, p.dmg, 'player', 0xff8030); }
       if (p.type === 'egrenade' && done) { this.explode(p.pos.clone(), 4.5, p.dmg, 'enemy', 0xff8030); }
       if (!done) {
         const steps = Math.ceil(p.vel.length() * dt / 0.3);
         const sdt = dt / steps;
         for (let s = 0; s < steps && !done; s++) {
-          if (p.type === 'spit') p.vel.y -= 18 * sdt;
+          if (p.type === 'spit' || p.type === 'boulder') p.vel.y -= 18 * sdt;
           if (p.type === 'grenade' || p.type === 'egrenade') p.vel.y -= 20 * sdt;
           if (p.type === 'orb') { const to = pl.eye.clone().sub(p.pos).normalize().multiplyScalar(9); p.vel.lerp(to, Math.min(1, sdt * 0.9)); }
           const np = p.pos.clone().addScaledVector(p.vel, sdt);
@@ -1065,12 +1070,17 @@ G.Game = class {
           if (!solid && p.owner !== 'player') for (const b of this.world.solids) if (!b.dead && np.x > b.min.x && np.x < b.max.x && np.y > b.min.y && np.y < b.max.y && np.z > b.min.z && np.z < b.max.z) { solid = true; if (p.type !== 'egrenade') this.damageBuild(b, p.dmg); }
           if (p.type === 'grenade' || p.type === 'egrenade') {
             if (solid) {
-              // rebond simple
+              // rebond simple ; au sol elle roule peu
               if (w.isSolid(Math.floor(np.x), Math.floor(p.pos.y), Math.floor(p.pos.z))) p.vel.x *= -0.4;
-              if (w.isSolid(Math.floor(p.pos.x), Math.floor(np.y), Math.floor(p.pos.z))) p.vel.y *= -0.35;
+              if (w.isSolid(Math.floor(p.pos.x), Math.floor(np.y), Math.floor(p.pos.z))) { p.vel.y *= -0.3; p.vel.x *= 0.55; p.vel.z *= 0.55; }
               if (w.isSolid(Math.floor(p.pos.x), Math.floor(p.pos.y), Math.floor(np.z))) p.vel.z *= -0.4;
               p.vel.multiplyScalar(0.8);
             } else p.pos.copy(np);
+            // grenade du joueur : elle explose au contact d'un ennemi
+            if (p.type === 'grenade') for (const e of this.enemies) {
+              if (e.dead) continue;
+              if (Math.abs(p.pos.x - e.pos.x) < e.w * 0.6 + 0.15 && Math.abs(p.pos.z - e.pos.z) < e.w * 0.6 + 0.15 && p.pos.y > e.pos.y && p.pos.y < e.pos.y + 1.9 * e.size) { p.life = 0; done = true; this.explode(p.pos.clone(), 5, p.dmg, 'player', 0xff8030); break; }
+            }
             continue;
           }
           if (solid) {
@@ -1078,6 +1088,7 @@ G.Game = class {
             if (p.type === 'energy') this.explode(p.pos.clone(), p.splash, p.dmg, 'player', p.up ? 0xff60ff : 0x60ffb0);
             if (p.type === 'spit') this.acidPuddle(p.pos.clone(), p.dmg * 0.5);
             if (p.type === 'orb') this.particles(p.pos, 0xb050ff, 8, 3);
+            if (p.type === 'boulder') this.explode(p.pos.clone(), 2.6, p.dmg, 'enemy', 0x9a8a7a);
             break;
           }
           p.pos.copy(np);
@@ -1092,7 +1103,9 @@ G.Game = class {
           } else {
             const c = pl.pos.clone(); c.y += 0.9;
             if (Math.abs(p.pos.x - c.x) < 0.55 && Math.abs(p.pos.z - c.z) < 0.55 && Math.abs(p.pos.y - c.y) < 1.0) {
-              done = true; this.damagePlayer(p.dmg, p.owner);
+              done = true;
+              if (p.type === 'boulder') this.explode(p.pos.clone(), 2.6, p.dmg, 'enemy', 0x9a8a7a);
+              else this.damagePlayer(p.dmg, p.owner);
               if (p.type === 'spit') this.acidPuddle(pl.pos.clone(), p.dmg * 0.5);
             }
           }
@@ -1103,6 +1116,25 @@ G.Game = class {
       if (p.type === 'energy') p.mesh.lookAt(p.pos.clone().add(p.vel));
       else p.mesh.rotation.x += dt * 8;
     }
+  }
+  // bloc de pierre lancé en cloche par un boss : on choisit la trajectoire la plus tendue qui passe les obstacles
+  throwBoulder(e, from) {
+    const pl = this.player, w = this.world, horiz = Math.hypot(pl.eye.x - from.x, pl.eye.z - from.z);
+    let best = null;
+    for (let t = G.clamp(horiz / 15, 0.6, 2.4); t <= 2.8 && !best; t += 0.2) {
+      const to = pl.eye.clone().addScaledVector(pl.vel, t * 0.4); to.y -= 0.4;
+      const vel = new THREE.Vector3((to.x - from.x) / t, (to.y - from.y) / t + 0.5 * 18 * t, (to.z - from.z) / t);
+      let clear = true;
+      for (let k = 1; k < 24 && clear; k++) {
+        const s = (k / 24) * t * 0.92, x = from.x + vel.x * s, y = from.y + vel.y * s - 9 * s * s, z = from.z + vel.z * s;
+        if (w.isSolid(Math.floor(x), Math.floor(y), Math.floor(z))) clear = false;
+      }
+      if (clear) best = vel;
+    }
+    if (!best) return false;
+    this.spawnProjectile('boulder', from, best, Math.round(e.dmg * 0.7), e);
+    G.Audio.S.growl(e.pos);
+    return true;
   }
   acidPuddle(pos, dmg, color, life = 4) {
     const w = this.world;
