@@ -66,7 +66,7 @@ G.UI = (function () {
         '<div class="launch"><button id="btnCoopCreate" class="big">Créer le salon</button></div></div>' +
         '<div class="panel"><h3 class="sec">Rejoindre une partie</h3><div class="cstatus" id="coopStatus"></div><div id="coopGames"></div>' +
         '<div class="joinrow"><input id="coopCode" maxlength="12" placeholder="CODE" autocomplete="off" spellcheck="false"><button class="act" id="btnCoopJoin">Rejoindre</button></div><div class="cwarn hidden" id="coopJoinErr"></div>' +
-        '<p class="hint">Pseudo : <b>' + G.esc(R.profile.name) + '</b> (modifiable dans Options). Vos amis doivent ouvrir cette même page (lien partagé) pour voir vos parties.</p></div></div>';
+        '<p class="hint">Pseudo : <b>' + G.esc(R.profile.name) + '</b> (modifiable dans Options). Vos amis doivent ouvrir cette même page (lien partagé) pour voir vos parties.</p><details class="cdiag"><summary>Diagnostic du salon</summary><div id="coopDiag"></div></details></div></div>';
       body.innerHTML = h;
       body.querySelectorAll('.ctype').forEach((b) => b.addEventListener('click', () => { coopType = b.dataset.t; G.Audio.S.click(); coopView = ''; renderCoop(); }));
       body.querySelectorAll('.cvs').forEach((b) => b.addEventListener('click', () => { coopVs = b.dataset.vs; G.Audio.S.click(); coopView = ''; renderCoop(); }));
@@ -86,7 +86,7 @@ G.UI = (function () {
     body.innerHTML = '<div class="panel coopRoom"><div class="ccode">Salon <b>' + G.esc(C.code.toUpperCase()) + '</b></div><div class="csub" id="coopSub"></div><div class="cstatus" id="coopStatus"></div><div class="cwarn hidden" id="coopWarn"></div>' +
       '<div id="coopMembers"></div><div class="btnrow">' + (C.vs === '2v2' ? '<button class="act" id="btnCoopTeam">Changer d\'équipe</button>' : '') + (C.role === 'host' ? '<button class="act big" id="btnCoopStart">Lancer la partie</button>' : '<span class="hint" id="coopWait">En attente du lancement par l\'hôte…</span>') +
       '<button class="act" id="btnCoopLeave">Quitter le salon</button></div>' +
-      '<p class="hint">Donnez le code <b>' + G.esc(C.code.toUpperCase()) + '</b> à vos amis : ils le saisissent dans « Rejoindre une partie ». Jusqu\'à ' + C.maxPlayers(C.vs) + ' joueurs ; on peut aussi rejoindre une partie en cours.</p></div>';
+      '<p class="hint">Donnez le code <b>' + G.esc(C.code.toUpperCase()) + '</b> à vos amis : ils le saisissent dans « Rejoindre une partie ». Jusqu\'à ' + C.maxPlayers(C.vs) + ' joueurs ; on peut aussi rejoindre une partie en cours.</p><details class="cdiag"><summary>Diagnostic du salon</summary><div id="coopDiag"></div></details></div>';
     if ($('btnCoopStart')) $('btnCoopStart').addEventListener('click', () => { G.Audio.init(); C.launch(); });
     $('btnCoopLeave').addEventListener('click', () => { C.leave(); });
     if ($('btnCoopTeam')) $('btnCoopTeam').addEventListener('click', () => { G.Audio.S.click(); C.switchTeam(); });
@@ -95,8 +95,17 @@ G.UI = (function () {
   function renderCoopLists(C) {
     const cs = $('coopStatus');
     if (cs) {
-      const n = C.viewers(), txt = C.connected ? '● Connecté au salon — ' + n + ' personne' + (n > 1 ? 's' : '') + ' sur la page (vous compris)' + (n <= 1 ? ' : vos amis n\'apparaissent pas encore' : '') : '○ Connexion au salon en ligne…';
-      if (cs.textContent !== txt) { cs.textContent = txt; cs.classList.toggle('off', !C.connected || n <= 1); }
+      const n = C.viewers(), on = C.isConnected(), long = performance.now() - (C.initT || 0) > 8000;
+      const txt = on ? '● Connecté au salon — ' + n + ' personne' + (n > 1 ? 's' : '') + ' sur la page (vous compris)' + (n <= 1 ? ' : personne d\'autre n\'est visible' : '')
+        : long ? '○ Pas connecté au salon en ligne : cette page n\'y est pas admise (ouvrez-la depuis une invitation par e-mail, connecté à votre compte Claude, puis rechargez)' : '○ Connexion au salon en ligne…';
+      if (cs.textContent !== txt) { cs.textContent = txt; cs.classList.toggle('off', !on || n <= 1); }
+    }
+    const dg = $('coopDiag');
+    if (dg) {
+      const d = C.diag();
+      const html = '<div>Connecté : <b>' + (d.connected ? 'oui' : 'non') + '</b>' + (d.error ? ' — erreur : <b>' + G.esc(d.error) + '</b>' : '') + ' — personnes vues : <b>' + d.peers + '</b> — votre identifiant : ' + G.esc(d.tag) + ' — depuis ' + d.since + ' s</div>' +
+        (d.rows.length ? '<ul>' + d.rows.map((r) => '<li>' + G.esc(r) + '</li>').join('') + '</ul>' : '<div>Aucune personne visible (même pas vous) : la page n\'a pas encore de réponse du salon.</div>');
+      if (dg.innerHTML !== html) dg.innerHTML = html;
     }
     const cw = $('coopWarn');
     if (cw) {

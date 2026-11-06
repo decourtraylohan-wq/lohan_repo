@@ -35,7 +35,7 @@ G.Coop = class {
     try { room = window.claude && window.claude.use ? await window.claude.use('room') : null; } catch (e) { room = null; }
     this.ready = true;
     if (!room) { this.available = false; this.changed(); return; }
-    this.room = room; this.available = true;
+    this.room = room; this.available = true; this.initT = performance.now();
     const fail = (e) => { this.roomError = (e && e.code) || 'error'; this.changed(); };
     room.onPeers((c) => {
       this.peers = c.peers;
@@ -51,6 +51,17 @@ G.Coop = class {
   pushFailed(e) {
     const c = e && e.code;
     if (c === 'not_granted' || c === 'not_permitted') { this.roomError = c; this.changed(); }
+  }
+  isConnected() { try { return !!(this.room && this.room.connected()); } catch (e) { return this.connected; } }
+  // état détaillé du salon, affiché dans « Diagnostic »
+  diag() {
+    const rows = this.peers.map((p) => {
+      const pr = p.presence || {};
+      const who = p.sameTab ? 'vous (cet onglet)' : p.kind === 'agent' ? 'Claude' : p.isMe ? 'vous (autre onglet)' : p.guest ? 'autre compte (invité)' : 'autre compte';
+      const what = pr.g ? (pr.role === 'host' ? 'héberge ' : 'dans le salon ') + String(pr.g).toUpperCase() + (pr.lb && pr.lb.st ? ' (en cours)' : '') : Object.keys(pr).length ? 'au menu' : 'présence vide';
+      return String(pr.nick || '?').slice(0, 16) + ' — ' + who + ' — ' + what;
+    });
+    return { connected: this.isConnected(), error: this.roomError || '', peers: this.peers.length, tag: this.tag, since: Math.round((performance.now() - (this.initT || 0)) / 1000), rows };
   }
   // personnes visibles sur la page (nous compris)
   viewers() { return this.peers.filter((p) => p.kind !== 'agent').length; }
