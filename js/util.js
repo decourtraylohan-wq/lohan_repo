@@ -6,6 +6,11 @@ G.lerp = (a, b, t) => a + (b - a) * t;
 G.rand = (a, b) => a + Math.random() * (b - a);
 G.randInt = (a, b) => Math.floor(a + Math.random() * (b - a + 1));
 G.pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+// exécute fn avec un Math.random déterministe (cartes identiques chez tous les joueurs en coop)
+G.seeded = function (seed, fn) {
+  const orig = Math.random; Math.random = G.mulberry32(seed);
+  try { return fn(); } finally { Math.random = orig; }
+};
 
 // RNG déterministe (pour générer les maps de façon identique à chaque partie)
 G.mulberry32 = function (seed) {

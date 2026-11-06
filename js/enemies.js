@@ -39,13 +39,15 @@ G.Enemy = class {
   constructor(game, type, pos, opts = {}) {
     this.game = game;
     this.isBoss = !!opts.boss;
-    const T = this.isBoss ? opts.boss : (G.ZTYPES[type] || G.STYPES[type]);
+    const T = opts.T || (this.isBoss ? opts.boss : (G.ZTYPES[type] || G.STYPES[type]));
+    this.nid = opts.nid || (G._nid = (G._nid || 0) + 1); // identifiant réseau (coop)
+    this.puppet = !!opts.puppet; this.avatar = !!opts.avatar;
     this.T = T; this.type = this.isBoss ? T.id : type;
     this.shape = T.shape || 'humanoid';
     this.soldier = !!T.soldier;
     const mods = game.mods;
     this.size = T.size;
-    this.elite = !this.isBoss && type !== 'minion' && Math.random() < mods.elite;
+    this.elite = opts.elite !== undefined ? !!opts.elite : !this.isBoss && !this.avatar && type !== 'minion' && Math.random() < mods.elite;
     const base = this.soldier ? game.soldierBaseHp() : game.zombieBaseHp();
     const baseHp = this.isBoss ? T.hp * opts.hpScale : base * T.hp * mods.hp * (this.elite ? 1.5 : 1);
     this.maxHp = this.hp = Math.round(baseHp);
@@ -244,8 +246,16 @@ G.Enemy = class {
     this.mesh.visible = false;
   }
 
+  // cible : le joueur local, ou en coop (hôte) le joueur vivant le plus proche
+  tgt() {
+    const g = this.game;
+    if (!g.coop || !g.coop.isHost) return g.player;
+    if (!this._tgt || g.time > (this._tgtT || 0) || this._tgt.dead) { this._tgtT = g.time + 1; this._tgt = g.coop.nearestTarget(this.pos) || g.player; }
+    return this._tgt;
+  }
   update(dt) {
-    const game = this.game, w = game.world, pl = game.player;
+    if (this.puppet || this.avatar) return this.puppetUpdate(dt);
+    const game = this.game, w = game.world, pl = this.tgt();
     this.anim += dt;
     if (this.flash > 0) { this.flash -= dt; for (const m of this.mats) if (m.emissive) m.emissive.setHex(this.flash > 0 ? 0x902020 : (this.state === 'stunned' ? 0x303000 : 0)); }
     if (this.dead) {
@@ -281,7 +291,7 @@ G.Enemy = class {
       const direct = !onLadNow && Math.abs(dy) < 1.2 && (dist < 1.6 || (dist < 7 && this.walkableTo(pl.pos) && w.lineOfSight(new THREE.Vector3(this.pos.x, this.pos.y + 1.2, this.pos.z), pl.eye)));
       if (direct || this.T.floating) moveDir.copy(toP).normalize();
       else {
-        const nxt = this.big ? w.nextStepBig(this.pos.x, this.pos.y, this.pos.z) : w.nextStep(this.pos.x, this.pos.y, this.pos.z);
+        const nxt = pl.isRemote ? (pl.field ? w.nextStepField(this.pos.x, this.pos.y, this.pos.z, pl.field) : null) : this.big ? w.nextStepBig(this.pos.x, this.pos.y, this.pos.z) : w.nextStep(this.pos.x, this.pos.y, this.pos.z);
         // grand boss qui ne passe pas (tour, immeuble) : il attend au plus près et assiège au lieu de se téléporter
         if (this.big) {
           // vrai siège : au point large le plus proche du joueur ; sinon il est coincé sur une case étroite → il réapparaît
@@ -325,7 +335,7 @@ G.Enemy = class {
     if (!this.T.ranged && !this.soldier && dist < reach && Math.abs(dy) < 1.6 + this.size * 0.3 && !frozen) {
       attacking = true;
       if (this.type === 'bloater') { if (this.fuse < 0) this.fuse = 0.7; }
-      else if (this.atkT <= 0) { this.atkT = this.isBoss ? 1.3 : 1.0; this.lastAtk = game.time; game.damagePlayer(this.dmg, this); }
+      else if (this.atkT <= 0) { this.atkT = this.isBoss ? 1.3 : 1.0; this.lastAtk = game.time; game.hurt(pl, this.dmg, this); }
       if (dist < 0.9) speed = 0;
     }
     if (this.soldier && !pl.vehicle && dist < (this.T.role === 'melee' ? 1.9 : 1.7) && Math.abs(dy) < 1.6 && !this.swimming) {
@@ -333,7 +343,7 @@ G.Enemy = class {
       if (this.atkT <= 0) {
         const knife = this.T.role === 'melee';
         this.atkT = knife ? 0.75 : 1.2; this.lastAtk = game.time;
-        game.damagePlayer(knife ? this.dmg : this.dmg * 2 + 10, this);
+        game.hurt(pl, knife ? this.dmg : this.dmg * 2 + 10, this);
         if (knife) G.Audio.S.melee();
         attacking = true;
       }
@@ -466,6 +476,51 @@ G.Enemy = class {
     return true;
   }
 
+  // marionnette (coop) : position et orientation reçues de l'hôte, ou avatar d'un autre joueur ; simple animation
+  puppetUpdate(dt) {
+    this.anim += dt;
+    if (this.flash > 0) { this.flash -= dt; for (const m of this.mats) if (m.emissive) m.emissive.setHex(this.flash > 0 ? 0x902020 : 0); }
+    if (this.dead) {
+      this.deadT += dt;
+      const t = Math.min(1, this.deadT / 0.45);
+      this.mesh.rotation.x = -t * Math.PI / 2;
+      if (this.avatar) { this.mesh.position.copy(this.pos); return true; }
+      if (this.deadT > 1.4) this.mesh.position.y -= dt * 0.8;
+      return this.deadT < 2.4;
+    }
+    const n = this.net;
+    if (n) {
+      const dx = n.x - this.pos.x, dy = n.y - this.pos.y, dz = n.z - this.pos.z;
+      if (dx * dx + dy * dy + dz * dz > 25) this.pos.set(n.x, n.y, n.z);
+      else { const k = Math.min(1, dt * 10); this.pos.x += dx * k; this.pos.y += dy * k; this.pos.z += dz * k; }
+      this.vel.set(dx * 5, 0, dz * 5);
+      let diff = n.yaw - this.mesh.rotation.y;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      this.mesh.rotation.y += diff * Math.min(1, dt * 10);
+      this.crouching = !!n.crouch;
+    }
+    const sp = Math.min(6, Math.hypot(this.vel.x, this.vel.z));
+    const swing = Math.sin(this.anim * (3 + sp * 2.2)) * Math.min(0.8, sp * 0.3);
+    if (this.legs) this.legs.forEach((l, i) => { l.rotation.x = (i % 2 === (i < 2 ? 0 : 1) ? 1 : -1) * swing * 1.2; });
+    else if (this.legL) { this.legL.rotation.x = swing; this.legR.rotation.x = -swing; }
+    if (this.armL) {
+      if (this.shape === 'crawler') { this.armL.rotation.x = -1.1 + Math.sin(this.anim * 6) * 0.5; this.armR.rotation.x = -1.1 - Math.sin(this.anim * 6) * 0.5; }
+      else if (this.soldier) { this.armL.rotation.set(-1.45, 0.45, 0); this.armR.rotation.set(-1.5, -0.15, 0); }
+      else { this.armL.rotation.x = (this.armBase || -1.4) + swing * 0.3; this.armR.rotation.x = (this.armBase || -1.4) - swing * 0.3; }
+    }
+    if (this.upper) {
+      const c = this.crouchK = G.lerp(this.crouchK || 0, this.crouching ? 1 : 0, Math.min(1, dt * 10));
+      this.upper.position.y = -0.48 * c;
+      if (c > 0.05 && this.legL) { this.legL.position.y = this.legH - 0.48 * c; this.legR.position.y = this.legH - 0.48 * c; this.legL.rotation.x = -1.3 * c; this.legR.rotation.x = -0.6 * c; }
+      else if (this.legL) { this.legL.position.y = this.legR.position.y = this.legH; }
+    }
+    this.mesh.position.copy(this.pos); this.mesh.rotation.x = 0;
+    this.mesh.updateMatrixWorld(true);
+    this.head.getWorldPosition(this._head);
+    return true;
+  }
+
   respawnFar(better) {
     let sp = this.isBoss ? this.game.pickSpawn(8, 20) : this.game.pickSpawn();
     if (this.big) {
@@ -480,7 +535,7 @@ G.Enemy = class {
 
   // ---------- zombies spéciaux ----------
   spitterLogic(dt, dist, toP, moveDir) {
-    const pl = this.game.player;
+    const pl = this.tgt();
     const los = this.game.world.lineOfSight(new THREE.Vector3(this.pos.x, this.pos.y + 1.6, this.pos.z), pl.eye);
     this.abilityT -= dt;
     if (los && dist < 15) {
@@ -500,10 +555,10 @@ G.Enemy = class {
     return this.speed;
   }
   stalkerLogic(dt, dist, dy, toP, speed) {
-    const game = this.game, pl = game.player;
+    const game = this.game, pl = this.tgt();
     this.abilityT -= dt;
     if (this.state === 'pounce') {
-      if (!this.hitDuringCharge && dist < 1.5 && Math.abs(dy) < 1.8) { this.hitDuringCharge = true; this.lastAtk = game.time; game.damagePlayer(this.dmg, this); pl.vel.x += this.chargeDir.x * 6; pl.vel.z += this.chargeDir.z * 6; }
+      if (!this.hitDuringCharge && dist < 1.5 && Math.abs(dy) < 1.8) { this.hitDuringCharge = true; this.lastAtk = game.time; game.hurt(pl, this.dmg, this); pl.vel.x += this.chargeDir.x * 6; pl.vel.z += this.chargeDir.z * 6; }
       if (this.onGround && this.stateT < game.time - 0.15) this.state = 'chase';
       return speed;
     }
@@ -517,7 +572,7 @@ G.Enemy = class {
     return speed;
   }
   screamerLogic(dt, dist, speed) {
-    const game = this.game, pl = game.player;
+    const game = this.game, pl = this.tgt();
     this.abilityT -= dt;
     if (this.state === 'scream') {
       if (this.stateT <= game.time) { this.state = 'chase'; game.scream(this); }
@@ -533,7 +588,7 @@ G.Enemy = class {
 
   // ---------- soldats ----------
   soldierLogic(dt, dist, dy, toP, moveDir) {
-    const game = this.game, pl = game.player, w = game.world, T = this.T;
+    const game = this.game, pl = this.tgt(), w = game.world, T = this.T;
     const k = Math.min(this.size, 1.3);
     this.losT -= dt;
     if (this.losT <= 0) {
@@ -599,7 +654,7 @@ G.Enemy = class {
       return 0;
     }
     // joueur en étage : quelques-uns montent le chercher (assaillants en priorité), les autres se postent en hauteur ailleurs
-    if (game.playerUp && !this.isBoss) {
+    if (pl.up && !this.isBoss) {
       if (this.climber === undefined) {
         const n = game.enemies.filter((o) => o.climber && !o.dead).length;
         this.climber = role !== 'sniper' && role !== 'far' && n < 4 && (role === 'rush' || role === 'melee' || Math.random() < 0.35);
@@ -607,7 +662,7 @@ G.Enemy = class {
         G.Voice.bark(this, this.climber ? (n === 0 ? 'up' : 'climb') : 'up');
       }
     } else this.climber = undefined;
-    if (role !== 'rush' && role !== 'melee' || game.playerUp && !this.climber) { const r = this.goalLogic(dt, dist, toP, moveDir, range, role); if (r !== undefined) return r; }
+    if (role !== 'rush' && role !== 'melee' || pl.up && !this.climber) { const r = this.goalLogic(dt, dist, toP, moveDir, range, role); if (r !== undefined) return r; }
     if (role === 'rush') return this.engageOrAdvance(dt, dist, toP, moveDir, range, 1.35);
     if (role === 'melee') {
       // court de couvert en couvert puis fonce en zigzag
@@ -683,7 +738,7 @@ G.Enemy = class {
   }
   // ---------- objectifs lointains : toit d'un autre immeuble, position dans la rue, contournement ----------
   goalLogic(dt, dist, toP, moveDir, range, role) {
-    const game = this.game, w = game.world, pl = game.player;
+    const game = this.game, w = game.world, pl = this.tgt();
     this.goalCD = (this.goalCD || 0) - dt;
     if (this.state === 'goto') {
       const gl = this.goal;
@@ -705,7 +760,7 @@ G.Enemy = class {
     let g = null;
     const r = Math.random();
     if (role === 'sniper' || role === 'far') g = r < 0.9 ? this.pickPerch() : this.pickOverwatch(20, 40);
-    else if (game.playerUp && !this.climber) g = r < 0.5 ? this.pickPerch() : this.pickOverwatch(14, 40); // ceux qui ne montent pas prennent de la hauteur ailleurs
+    else if (pl.up && !this.climber) g = r < 0.5 ? this.pickPerch() : this.pickOverwatch(14, 40); // ceux qui ne montent pas prennent de la hauteur ailleurs
     else if (!this.los && game.time - (this.lastSeen || -99) < 6 && dist < 26 && r < 0.45) g = this.pickOverwatch(7, 15); // contournement
     if (!g) return undefined;
     const field = w.fieldTo(g.id);
@@ -726,7 +781,7 @@ G.Enemy = class {
   claimed(x, z) { return this.game.enemies.some((o) => o !== this && !o.dead && ((o.goal && Math.hypot(o.goal.x - x, o.goal.z - z) < 2.5) || (o.cover && o.cover.owner === o && Math.hypot(o.cover.x - x, o.cover.z - z) < 2.5))); }
   // poste en hauteur : toit (à ciel ouvert) ou étage derrière une fenêtre, de préférence avec vue sur le joueur, même loin
   pickPerch() {
-    const game = this.game, w = game.world, pl = game.player, R = game.map.perches || [], Wn = game.map.windows || [];
+    const game = this.game, w = game.world, pl = this.tgt(), R = game.map.perches || [], Wn = game.map.windows || [];
     if (!R.length && !Wn.length) return null;
     const far = this.T.role === 'sniper' || this.T.role === 'far';
     const ideal = far ? 36 : 26, dMax = far ? 75 : 55;
@@ -744,7 +799,7 @@ G.Enemy = class {
     return best;
   }
   pickOverwatch(r0, r1) {
-    const game = this.game, w = game.world, pl = game.player;
+    const game = this.game, w = game.world, pl = this.tgt();
     for (let i = 0; i < 30; i++) {
       const a = Math.random() * Math.PI * 2, rr = G.rand(r0, r1);
       const x = Math.floor(pl.pos.x + Math.cos(a) * rr), z = Math.floor(pl.pos.z + Math.sin(a) * rr);
@@ -761,7 +816,7 @@ G.Enemy = class {
   engageOrAdvance(dt, dist, toP, moveDir, range, runMul) {
     // il monte vers le joueur (escalier, échelle) : il continue d'avancer en tirant, sans pas de côté qui le ferait tomber
     const under = this.game.world.get(Math.floor(this.pos.x), Math.floor(this.pos.y - 0.05), Math.floor(this.pos.z));
-    if (this.climber && (Math.abs(this.game.player.pos.y - this.pos.y) > 1.2 || (under && G.BLOCKS[under].stair) || !this.walkableTo(this.game.player.pos))) {
+    if (this.climber && (Math.abs(this.tgt().pos.y - this.pos.y) > 1.2 || (under && G.BLOCKS[under].stair) || !this.walkableTo(this.tgt().pos))) {
       this.state = 'move'; this.navMode = 'flow';
       if (this.los && dist <= range[1]) this.tryFire(dt, dist, 0.7);
       return this.speed * 0.9;
@@ -801,7 +856,7 @@ G.Enemy = class {
   releaseCover() { if (this.cover && this.cover.owner === this) this.cover.owner = null; this.cover = null; this.localPath = null; }
   // cherche une case où l'on est caché accroupi mais d'où l'on peut tirer debout
   findCover(range, advance, retreat, hideOnly) {
-    const game = this.game, w = game.world, n = w.nav, pl = game.player;
+    const game = this.game, w = game.world, n = w.nav, pl = this.tgt();
     if (!n) return null;
     const lead = this.squad && this.squad.leader !== this && !this.squad.leader.dead ? this.squad.leader : null;
     const ctr = lead && lead.cover ? lead.cover : lead ? lead.pos : this.pos;
@@ -855,13 +910,13 @@ G.Enemy = class {
   updateLaser(on) {
     this.laser.visible = on;
     if (!on) return;
-    const a = this.muzzlePos(), b = this.game.player.eye.clone();
+    const a = this.muzzlePos(), b = this.tgt().eye.clone();
     const pos = this.laser.geometry.attributes.position;
     pos.setXYZ(0, a.x, a.y, a.z); pos.setXYZ(1, b.x, b.y - 0.15, b.z); pos.needsUpdate = true;
     this.laser.material.opacity = 0.25 + Math.min(1, this.aimT / this.T.react) * 0.6;
   }
   fireAt(dist, accMul = 1, dmgMul = 1) {
-    const game = this.game, pl = game.player, T = this.T;
+    const game = this.game, pl = this.tgt(), T = this.T;
     const from = this.muzzlePos();
     const pellets = T.pellets || 1;
     let acc = (T.acc || 0.4) * accMul * (1 + game.mods.tier * 0.05) * (this.elite ? 1.25 : 1);
@@ -872,10 +927,10 @@ G.Enemy = class {
     if (pl.crouch) acc *= 0.7;
     let hits = 0;
     for (let i = 0; i < pellets; i++) if (Math.random() < acc) hits++;
-    game.enemyShot(this, from, hits, hits * this.dmg * dmgMul, T.sound || 'rifle');
+    game.enemyShot(this, from, hits, hits * this.dmg * dmgMul, T.sound || 'rifle', pl);
   }
   soldierBoss(dt, dist, range) {
-    const game = this.game, pl = game.player, T = this.T;
+    const game = this.game, pl = this.tgt(), T = this.T;
     this.abilityT -= dt;
     if (T.id === 'juggernaut') {
       if (this.state === 'spin') {
@@ -897,7 +952,7 @@ G.Enemy = class {
         if (this.shotT <= 0) {
           this.shotT = 0.1;
           game.flame(this, this.muzzlePos(), pl.eye.clone());
-          game.damagePlayer(this.dmg * 0.1, this, true);
+          game.hurt(pl, this.dmg * 0.1, this, true);
         }
         return this.speed * 0.6;
       }
@@ -919,7 +974,7 @@ G.Enemy = class {
 
   // ---------- boss zombies ----------
   bossLogic(dt, dist, dy, toP, moveDir) {
-    const game = this.game, pl = game.player;
+    const game = this.game, pl = this.tgt();
     this.stateT -= dt; this.abilityT -= dt;
     const id = this.T.id;
     if (id === 'colosse') {
@@ -970,7 +1025,7 @@ G.Enemy = class {
       if (this.state === 'charge') {
         this.vel.x = this.chargeDir.x * 15; this.vel.z = this.chargeDir.z * 15;
         if (!this.hitDuringCharge && dist < 2.2 && Math.abs(dy) < 2.5) {
-          this.hitDuringCharge = true; game.damagePlayer(this.dmg, this);
+          this.hitDuringCharge = true; game.hurt(pl, this.dmg, this);
           pl.vel.x += this.chargeDir.x * 14; pl.vel.z += this.chargeDir.z * 14; pl.vel.y = 6;
         }
         if (this.blocked || this.stateT <= 0) {

@@ -1470,6 +1470,9 @@ G.Maps = (function () {
   }
   function create(id) {
     const def = list.find((m) => m.id === id) || list[0];
+    return G.seeded(def.id.length * 7919 + def.stars * 31, () => createSeeded(def));
+  }
+  function createSeeded(def) {
     const S = def.size;
     const w = new G.World(S, def.height, S);
     def.build(w, G.mulberry32(def.id.length * 1337 + def.stars));

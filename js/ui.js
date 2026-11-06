@@ -23,6 +23,80 @@ G.UI = (function () {
     if (name === 'options') renderOptions();
     if (name === 'story') renderStory();
     if (name === 'missions') renderMissions();
+    if (name === 'coop') { coopView = ''; renderCoop(); }
+  }
+
+  // ---------- Coop en ligne ----------
+  let coopMap = 'village', coopType = 'zombies', coopView = '', coopBound = false;
+  const mapName = (id) => (G.Maps.list.find((m) => m.id === id) || {}).name || id;
+  const typeName = (t) => (t === 'soldats' ? 'Soldats' : 'Zombies');
+  function coopState(C) { return !C.ready ? 'wait' : !C.available ? 'na' : C.code ? 'room:' + C.code : 'lobby'; }
+  function renderCoop() {
+    const C = G.game && G.game.coop, body = $('coopBody');
+    if (!C || !body) return;
+    if (!coopBound) { coopBound = true; C.onChange(() => { if (current === 'coop' && G.game.phase === 'menu') renderCoop(); }); }
+    const st = coopState(C);
+    if (st === coopView) { renderCoopLists(C); return; }
+    coopView = st;
+    if (st === 'wait') { body.innerHTML = '<div class="panel"><p class="hint" style="margin:0">Connexion au salon en ligne…</p></div>'; return; }
+    if (st === 'na') {
+      body.innerHTML = '<div class="panel coopinfo"><h3 class="sec">Salon en ligne indisponible ici</h3>' +
+        '<p>Le coop fonctionne quand le jeu est ouvert sur claude.ai. Pour jouer avec vos amis :</p>' +
+        '<ol><li>Ouvrez le menu <b>Partager</b> de la page et invitez-les (ou envoyez-leur le lien).</li><li>Ils ouvrent le lien en étant connectés à leur compte Claude.</li><li>L\'un de vous crée une partie ici, les autres la rejoignent.</li></ol></div>';
+      return;
+    }
+    if (st === 'lobby') {
+      let h = '<div class="cols coopcols"><div class="panel"><h3 class="sec">Créer une partie</h3>' +
+        '<div class="modes">' + ['zombies', 'soldats'].map((t) => '<button class="ctype gtype' + (coopType === t ? ' active' : '') + '" data-t="' + t + '"><b>' + (t === 'soldats' ? '🎖 Soldats' : '🧟 Zombies') + '</b></button>').join('') + '</div>' +
+        '<div class="maps cmaps">' + G.Maps.list.map((m) => '<button class="mapcard' + (m.id === coopMap ? ' active' : '') + '" data-cmap="' + m.id + '"><div class="thumb" style="background-image:url(' + thumb(m.id) + ')"></div><div class="info"><h3>' + m.name + '</h3></div></button>').join('') + '</div>' +
+        '<div class="launch"><button id="btnCoopCreate" class="big">Créer le salon</button></div></div>' +
+        '<div class="panel"><h3 class="sec">Rejoindre une partie</h3><div id="coopGames"></div>' +
+        '<div class="joinrow"><input id="coopCode" maxlength="4" placeholder="CODE" autocomplete="off"><button class="act" id="btnCoopJoin">Rejoindre</button></div>' +
+        '<p class="hint">Pseudo : <b>' + G.esc(R.profile.name) + '</b> (modifiable dans Options). Vos amis doivent ouvrir cette même page (lien partagé) pour voir vos parties.</p></div></div>';
+      body.innerHTML = h;
+      body.querySelectorAll('.ctype').forEach((b) => b.addEventListener('click', () => { coopType = b.dataset.t; G.Audio.S.click(); coopView = ''; renderCoop(); }));
+      body.querySelectorAll('[data-cmap]').forEach((b) => b.addEventListener('click', () => { coopMap = b.dataset.cmap; G.Audio.S.click(); coopView = ''; renderCoop(); }));
+      $('btnCoopCreate').addEventListener('click', () => { G.Audio.init(); C.create(coopMap, coopType); });
+      const join = () => { const c = $('coopCode').value.trim().toLowerCase(); if (c.length < 4) { G.Audio.S.deny(); return; } C.join(c); };
+      $('btnCoopJoin').addEventListener('click', join);
+      $('coopCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') join(); });
+      renderCoopLists(C);
+      return;
+    }
+    // salon d'attente
+    body.innerHTML = '<div class="panel coopRoom"><div class="ccode">Salon <b>' + G.esc(C.code.toUpperCase()) + '</b></div><div class="csub" id="coopSub"></div>' +
+      '<div id="coopMembers"></div><div class="btnrow">' + (C.role === 'host' ? '<button class="act big" id="btnCoopStart">Lancer la partie</button>' : '<span class="hint" id="coopWait">En attente du lancement par l\'hôte…</span>') +
+      '<button class="act" id="btnCoopLeave">Quitter le salon</button></div>' +
+      '<p class="hint">Donnez le code <b>' + G.esc(C.code.toUpperCase()) + '</b> à vos amis : ils le saisissent dans « Rejoindre une partie ». Jusqu\'à 4 joueurs ; on peut aussi rejoindre une partie en cours.</p></div>';
+    if ($('btnCoopStart')) $('btnCoopStart').addEventListener('click', () => { G.Audio.init(); C.launch(); });
+    $('btnCoopLeave').addEventListener('click', () => { C.leave(); });
+    renderCoopLists(C);
+  }
+  function renderCoopLists(C) {
+    const gl = $('coopGames');
+    if (gl) {
+      const list = C.games();
+      const key = JSON.stringify(list);
+      if (gl.dataset.k !== key) {
+        gl.dataset.k = key;
+        gl.innerHTML = list.length ? list.map((g) => {
+          const full = g.players >= 4;
+          return '<div class="cgame"><div><b>' + G.esc(g.host) + '</b> <span class="tagm">' + G.esc(g.code.toUpperCase()) + '</span><small>' + G.esc(mapName(g.map)) + ' — ' + typeName(g.type) + ' — ' + g.players + '/4' + (g.started ? ' — en cours' : '') + '</small></div>' +
+            '<button class="act" data-join="' + G.esc(g.code) + '"' + (full ? ' disabled' : '') + '>' + (full ? 'Complet' : g.started ? 'Rejoindre en cours' : 'Rejoindre') + '</button></div>';
+        }).join('') : '<p class="hint">Aucune partie ouverte pour l\'instant : créez-en une, ou attendez qu\'un ami en crée une.</p>';
+        gl.querySelectorAll('[data-join]').forEach((b) => b.addEventListener('click', () => { G.Audio.init(); C.join(b.dataset.join); }));
+      }
+    }
+    const ml = $('coopMembers');
+    if (ml) {
+      const host = C.role === 'host' ? { presence: { lb: { m: C.mapId, t: C.type } } } : C.hostPeer();
+      const lb = host && host.presence && host.presence.lb;
+      const sub = lb ? mapName(lb.m) + ' — ' + typeName(lb.t) + (lb.st && C.role !== 'host' ? ' — partie en cours, vous allez la rejoindre…' : '') : 'Recherche de l\'hôte…';
+      if ($('coopSub').textContent !== sub) $('coopSub').textContent = sub;
+      const mem = C.members(C.code);
+      const html = mem.map((p) => '<div class="cmember"><span>' + (p.presence.role === 'host' ? '★ ' : '') + G.esc(String(p.presence.nick || 'Survivant').slice(0, 16)) + (p.sameTab ? ' (vous)' : '') + '</span><small>' + (p.presence.role === 'host' ? 'Hôte' : 'Équipier') + (p.guest ? ' — invité' : '') + '</small></div>').join('') || '<p class="hint">…</p>';
+      if (ml.innerHTML !== html) ml.innerHTML = html;
+    }
   }
 
   // ---------- Histoire ----------
@@ -297,7 +371,7 @@ G.UI = (function () {
 
   function showGameOver(run, res) {
     const acc = run.shots ? Math.round((run.hits / run.shots) * 100) : 0;
-    let h = '<p class="over-title">VOUS ÊTES MORT</p><div style="color:var(--muted)">' + G.esc(run.mapName) + ' — ' + (run.gameType === 'soldats' ? 'Soldats' : 'Zombies') + ' — ' + (run.mode === 'ranked' ? 'Classé' : 'Classique') + '</div>';
+    let h = '<p class="over-title">' + (run.coop ? 'ÉQUIPE DÉCIMÉE' : 'VOUS ÊTES MORT') + '</p><div style="color:var(--muted)">' + G.esc(run.mapName) + ' — ' + (run.gameType === 'soldats' ? 'Soldats' : 'Zombies') + ' — ' + (run.coop ? 'Coop en ligne' : run.mode === 'ranked' ? 'Classé' : 'Classique') + '</div>';
     h += '<div class="statgrid" style="margin:14px 0">' + [
       [run.wave, 'Vague atteinte'], [run.kills, 'Éliminations'], [run.headshots, 'Tirs à la tête'], [acc + ' %', 'Précision'],
       [run.points, 'Points gagnés'], [G.fmtTime(run.time), 'Temps survécu'], [run.bosses, 'Boss vaincus'], [run.dmgTaken, 'Dégâts subis'],
@@ -311,12 +385,13 @@ G.UI = (function () {
         (res.demoted ? '<div class="promo" style="background:#3a1a1a;color:#ff8080;margin-top:12px">RÉTROGRADATION : ' + a.label.toUpperCase() + '</div>' : '') + '</div>';
     }
     if (!res.cheat) h += '<div style="color:var(--muted);margin-top:8px">+' + res.xpGain + ' XP' + (res.levelUp ? ' — <b style="color:var(--accent2)">NIVEAU ' + R.level().lvl + ' !</b>' : '') + '</div>';
-    h += '<div class="btnrow"><button class="big" id="btnAgain">Rejouer</button><button id="btnDetail">Détail des vagues</button><button id="btnMenu">Menu principal</button></div>';
+    h += '<div class="btnrow">' + (run.coop ? '<button class="big" id="btnRoom">Retour au salon</button>' : '<button class="big" id="btnAgain">Rejouer</button>') + '<button id="btnDetail">Détail des vagues</button><button id="btnMenu">Menu principal</button></div>';
     $('overBody').innerHTML = h;
     $('scr-over').classList.remove('hidden');
     if (res.promoted) G.Audio.S.rankUp();
     setTimeout(() => { const b = $('overBar'); if (b) b.style.width = Math.round(res.infoAfter.progress * 100) + '%'; }, 200);
-    $('btnAgain').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.start(run.map, run.mode, run.gameType || 'zombies', res.cheat ? G.game.lastCheats : null); });
+    if (run.coop) $('btnRoom').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.quitToMenu(true); go('coop'); });
+    else $('btnAgain').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.start(run.map, run.mode, run.gameType || 'zombies', res.cheat ? G.game.lastCheats : null); });
     $('btnDetail').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.quitToMenu(); go('stats'); });
     $('btnMenu').addEventListener('click', () => { $('scr-over').classList.add('hidden'); G.game.quitToMenu(); go('main'); });
   }
@@ -359,6 +434,8 @@ G.UI = (function () {
     setHTML('perks', d.perks.map((p) => { const P = G.PERKS[p]; return '<span title="' + P.name + '" style="color:#' + P.color.toString(16).padStart(6, '0') + '">' + P.icon + '</span>'; }).join(''));
     setHTML('powers', Object.entries(d.power).filter(([, v]) => v > 0).map(([k, v]) => { const P = G.POWERUPS[k]; return '<div style="color:#' + P.color.toString(16).padStart(6, '0') + '">' + P.icon + ' ' + Math.ceil(v) + 's</div>'; }).join(''));
     setText('prompt', d.prompt);
+    $('team').classList.toggle('hidden', !d.team);
+    if (d.team) setHTML('team', d.team.map((m) => '<div class="' + (m.dead ? 'down' : '') + '"><i style="background:' + m.color + '"></i><span>' + G.esc(m.nick) + '</span><b><em style="width:' + Math.max(0, Math.min(100, m.hp)) + '%"></em></b>' + (m.dead ? '<small>À TERRE</small>' : '') + '</div>').join(''));
     if (d.boss) { $('bossbar').classList.remove('hidden'); setText('bossname', d.boss.name + (d.boss.stunned ? ' — ÉTOURDI' : '')); $('bosshp').style.width = (d.boss.hp * 100).toFixed(1) + '%'; }
     else $('bossbar').classList.add('hidden');
     const gap = 6 + (1 - d.ads) * 6 + (d.sprint ? 8 : 0);

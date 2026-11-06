@@ -38,6 +38,7 @@ G.Game = class {
     window.addEventListener('resize', () => this.resize());
     this.resize();
     this.loadMap('village');
+    this.coop = new G.Coop(this);
     requestAnimationFrame((t) => this.frame(t));
   }
 
@@ -145,7 +146,7 @@ G.Game = class {
     this.buildMinimap();
     this.enemies = []; this.projectiles = []; this.powerups = []; this.fx = []; this.particlesList = [];
     this.builds = []; this.ghost = null; this.buildItem = null;
-    this.vehicles = (map.carSpots || []).slice(0, 28).map((sp) => new G.Vehicle(this, sp));
+    this.vehicles = G.seeded(4242, () => (map.carSpots || []).slice(0, 28).map((sp) => new G.Vehicle(this, sp)));
     this.tracers = [];
     scene.add(this.camera);
   }
@@ -262,6 +263,7 @@ G.Game = class {
   // ---------- Démarrage / fin ----------
   // mode Histoire / Missions : même moteur, objectifs à la place des vagues
   startMission(def, kind) {
+    if (this.coop && this.coop.code) this.coop.leave();
     if (this.campaign) this.campaign.dispose();
     this.pendingMission = def;
     this.start(def.map, 'classic', def.type, null);
@@ -303,13 +305,17 @@ G.Game = class {
       if (ws.length) { pl.slots = ws.slice(0, pl.maxSlots).map((id) => pl.newSlot(id, !!c.upgraded)); pl.cur = 0; pl.setViewWeapon(); }
       pl.plates = 5; pl.armor = 150; pl.builds = { barricade: 4, shield: 3 }; pl.grenades = 4;
     }
+    this.coopFinal = false;
+    if (this.coop && this.coop.code && !this.coop.started) this.coop.leave();
     G.UI.showHUD(true);
+    if (this.coop && this.coop.active) { this.coop.onGameStart(); this.lockPointer(); return; }
     this.message('PRÉPAREZ-VOUS', (gameType === 'soldats' ? 'Soldats — ' : 'Zombies — ') + this.map.def.name + (mode === 'ranked' ? ' — CLASSÉ ' + G.Ranked.rankInfo(G.Ranked.profile.rp).label : ' — CLASSIQUE'), 3.5);
     this.lockPointer();
   }
   lockPointer() { try { const p = this.canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* ignoré */ } }
-  quitToMenu() {
+  quitToMenu(keepCoop) {
     G.Voice.stop();
+    if (this.coop && this.coop.code) { if (keepCoop) this.coop.backToRoom(); else this.coop.leave(); }
     if (this.campaign) { this.campaign.dispose(); this.campaign = null; }
     this.phase = 'menu'; this.paused = false;
     if (document.pointerLockElement) document.exitPointerLock();
@@ -334,6 +340,7 @@ G.Game = class {
       if (this.paused) return;
       pl.keys[e.code] = true;
       if (e.repeat) { if (['Space', 'Tab'].includes(e.code)) e.preventDefault(); return; }
+      if (pl.dead && e.code !== 'Tab') return; // coop : à terre, on regarde ses équipiers
       // les lettres d'action suivent la disposition du clavier (AZERTY : E, A, F…)
       const key = (e.key || '').toLowerCase();
       if (pl.vehicle) { if (key === 'e') this.exitVehicle(); if (e.code === 'Space') e.preventDefault(); return; }
@@ -363,7 +370,7 @@ G.Game = class {
       if (this.cheats && key === 'k') this.cheatSkip();
       if (this.cheats && key === 'l') { this.points += 10000; }
       if (this.cheats && this.cheats.spectator && key === 't') this.toggleSpectator();
-      if (e.code === 'KeyN' && this.phase === 'intermission' && this.wave > 0) this.phaseT = Math.min(this.phaseT, 0.5);
+      if (e.code === 'KeyN' && this.phase === 'intermission' && this.wave > 0 && !(this.coop && this.coop.isClient)) this.phaseT = Math.min(this.phaseT, 0.5);
       if (e.code === 'Tab') { e.preventDefault(); G.UI.showScoreboard(true); }
       if (['Space', 'Tab'].includes(e.code)) e.preventDefault();
     });
@@ -371,6 +378,7 @@ G.Game = class {
     this.canvas.addEventListener('mousedown', (e) => {
       if (this.phase === 'menu' || this.phase === 'over' || this.paused) return;
       if (!document.pointerLockElement) this.lockPointer();
+      if (pl.dead) return;
       if (e.button === 0) pl.mouse.left = true;
       if (e.button === 1) { e.preventDefault(); pl.melee(); }
       if (e.button === 2) pl.mouse.right = true;
@@ -396,6 +404,7 @@ G.Game = class {
     let dt = (t - this.lastT) / 1000; this.lastT = t;
     if (dt > 0.05) dt = 0.05;
     if (!this.scene) return;
+    if (this.coop && this.phase === 'menu') this.coop.pollLobby();
     if (this.phase === 'menu' || this.phase === 'over') {
       const a = t * 0.00005, c = this.world.W / 2;
       this.camera.position.set(c + Math.cos(a) * c * 0.85, this.world.H * 0.7 + 4, c + Math.sin(a) * c * 0.85);
@@ -406,10 +415,12 @@ G.Game = class {
       this.render();
       return;
     }
-    if (!this.paused) this.update(dt);
+    // en coop, le monde continue de tourner pendant la pause (les équipiers jouent toujours)
+    const live = !this.paused || (this.coop && this.coop.active);
+    if (live) this.update(dt);
     this.updateSun(this.player.pos);
     this.render();
-    if (!this.paused) this.updateHUD(dt);
+    if (live) this.updateHUD(dt);
   }
 
   updateSun(p) {
@@ -462,6 +473,7 @@ G.Game = class {
       this.upT = 0.5;
       const w = this.world, ground = w.standAt(Math.floor(pl.pos.x), Math.floor(pl.pos.z));
       this.playerUp = !pl.vehicle && ground < 999 && pl.pos.y - ground > 3.5;
+      pl.up = this.playerUp;
     }
     // la voiture du joueur ne cache pas le joueur aux ennemis : ils la voient et lui tirent dessus
     this.world.losIgnore = pl.vehicle && !pl.vehicle.dead ? pl.vehicle.solid : null;
@@ -475,7 +487,7 @@ G.Game = class {
       if (danger > 0 && !pl.dead && this.beatT <= 0) { this.beatT = G.lerp(1.15, 0.42, danger); G.Audio.S.heartbeat(0.35 + danger * 1.1); G.UI._beat = 1; }
     }
 
-    if (this.campaign) this.campaign.update(dt); else this.updateWaves(dt);
+    if (this.campaign) this.campaign.update(dt); else if (!(this.coop && this.coop.isClient)) this.updateWaves(dt);
     // ennemis
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
@@ -491,6 +503,7 @@ G.Game = class {
     for (const v of this.vehicles) v.update(dt, v === pl.vehicle ? v.input : null);
     if (pl.vehicle) pl.vehicleCamera(this.camera, dt);
     if (pl.spectator) { for (const e of this.enemies) if (!e.dead) { e.dead = true; e.deadT = 3; } }
+    if (this.coop && this.coop.active) this.coop.update(dt);
     this.world.updateDirty();
     if (this.craftOpen && (!this.craftStation || Math.hypot(pl.pos.x - this.craftStation.center.x, pl.pos.z - this.craftStation.center.z) > 3)) this.closeCraft();
     if (this.cheats && this.cheats.god) { pl.hp = pl.maxHp; }
@@ -573,6 +586,7 @@ G.Game = class {
 
   beginWave() {
     this.wave++;
+    if (this.coop && this.coop.isHost) this.coop.onWaveStart();
     const w = this.wave;
     this.toSpawn = this.waveCount(w);
     this.spawnT = 1.5;
@@ -800,8 +814,28 @@ G.Game = class {
     }
     if (anyHit) this.stats.hits++;
   }
+  // dégâts infligés par un ennemi à sa cible : nous, ou un équipier (envoyés par le réseau)
+  hurt(target, amount, src, quiet) {
+    if (target && target.isRemote) { if (this.coop) this.coop.queueDamage(target.peer, amount, src); return; }
+    this.damagePlayer(amount, src, quiet);
+  }
+  // touche d'un équipier appliquée par l'hôte (pas de points pour l'hôte)
+  damageEnemyNet(e, dmg, part, src) {
+    if (e.dead) return;
+    e.damage(dmg, part, src);
+  }
   damageEnemy(e, dmg, part, src) {
     if (e.dead) return;
+    if (this.coop && this.coop.isClient && e.puppet) {
+      // invité : la touche est envoyée à l'hôte, qui l'applique
+      this.coop.claimHit(e, dmg, part, src);
+      this.stats.dmgDealt += Math.min(e.hp, dmg);
+      if (src === 'gun' || src === 'melee' || src === 'energy') this.addPoints(this.gameType === 'soldats' ? 20 : 10);
+      G.UI.hitmarker(false, part === 'head');
+      if (part === 'head') G.Audio.S.headshot(); else G.Audio.S.hit();
+      return;
+    }
+    e.lastBy = null;
     if (this.power.insta > 0 && !e.isBoss) dmg = e.hp + e.helmet + 1;
     const before = e.hp;
     const dealt = e.damage(dmg, part, src);
@@ -814,13 +848,16 @@ G.Game = class {
     if (e === this.boss) { this.boss = null; }
     if (this.campaign) this.campaign.onKilled(e, part);
     if (self) return;
-    this.stats.kills++; this.curWave.kills++;
-    if (part === 'head') { this.stats.headshots++; this.curWave.hs++; }
-    if (!['walker', 'minion', 'rifleman'].includes(e.type)) { this.stats.specials++; this.curWave.specials++; }
+    const remoteKill = e.lastBy && this.coop && this.coop.isHost && this.coop.others.has(e.lastBy);
+    if (this.curWave) this.curWave.kills++;
+    if (!remoteKill) this.stats.kills++;
+    if (part === 'head' && !remoteKill) { this.stats.headshots++; if (this.curWave) this.curWave.hs++; }
+    if (!['walker', 'minion', 'rifleman'].includes(e.type) && !remoteKill) { this.stats.specials++; if (this.curWave) this.curWave.specials++; }
     let pts = e.isBoss ? e.T.pts : src === 'melee' ? 130 : part === 'head' ? 100 : e.T.pts;
     if (this.gameType === 'soldats' && !e.isBoss) pts = Math.round(pts * 2.2); // moins d'ennemis, plus coriaces : ils rapportent bien plus
     if (src === 'nuke') pts = 0;
-    if (pts) this.addPoints(pts, part === 'head' ? 'TÊTE' : src === 'melee' ? 'COUTEAU' : null);
+    if (remoteKill) this.coop.creditKill(e.lastBy, pts, part === 'head');
+    else if (pts) this.addPoints(pts, part === 'head' ? 'TÊTE' : src === 'melee' ? 'COUTEAU' : null);
     G.Audio.S.kill();
     this.particles(e.pos.clone().add(new THREE.Vector3(0, 1.2 * e.size, 0)), e.isBoss ? 0x5a0a0a : 0x6a1010, e.isBoss ? 40 : 10, 4);
     if (e.isBoss) {
@@ -904,15 +941,22 @@ G.Game = class {
   gameOver(reason) {
     if (this.phase === 'over' || this.phase === 'menu') return;
     if (this.campaign) { this.campaign.fail(reason || 'death'); return; }
+    // coop : on tombe « à terre » tant qu'un équipier tient debout ; l'hôte termine la partie quand tout le monde est à terre
+    if (this.coop && this.coop.active && reason !== 'abandon') {
+      if (this.coop.isClient && !this.coopFinal) { this.coop.downed(); return; }
+      if (this.coop.isHost && !this.coop.allDead()) { this.coop.downed(); return; }
+    }
     this.phase = 'over';
     G.Audio.S.playerDeath();
+    const wasCoop = !!(this.coop && this.coop.active);
+    if (wasCoop) { this.player.dead = true; this.coop.publish(); } // dernier état (hôte : partie terminée pour tout le monde)
     if (this.curWave && this.waveStats[this.waveStats.length - 1] !== this.curWave) { this.curWave.t = this.time - this.curWave.t0; this.curWave.died = true; this.waveStats.push(this.curWave); }
     const s = this.stats;
     const run = {
       mode: this.mode, gameType: this.gameType, map: this.map.def.id, mapName: this.map.def.name, rpMult: this.map.def.rpMult,
       wave: this.wave, kills: s.kills, headshots: s.headshots, shots: s.shots, hits: s.hits,
       dmgDealt: Math.round(s.dmgDealt), dmgTaken: Math.round(s.dmgTaken), points: s.points, time: Math.round(this.time),
-      bosses: s.bosses, specials: s.specials, date: Date.now(),
+      bosses: s.bosses, specials: s.specials, date: Date.now(), coop: wasCoop,
       perks: [...this.player.perks], weapons: this.player.slots.map((x) => G.weaponStats(x).name),
       waves: this.waveStats.map((w) => ({ n: w.n, t: Math.round(w.t || 0), kills: w.kills, hs: w.hs, dmgTaken: Math.round(w.dmgTaken), pts: w.pts, boss: w.boss, specials: w.specials, died: !!w.died })),
     };
@@ -954,6 +998,12 @@ G.Game = class {
       const amt = (self ? 0.15 : 1) * (src === 'bloater' || src === 'enemy' ? dmg : dmg * 0.4) * (1 - pd / r * 0.5);
       if (amt > 1) this.damagePlayer(amt, { pos });
     }
+    if (this.coop && this.coop.isHost && src !== 'player') for (const o of this.coop.others.values()) {
+      const P = o.proxy; if (P.dead) continue;
+      const d = P.pos.clone().add(new THREE.Vector3(0, 0.9, 0)).distanceTo(pos);
+      if (d < r) this.hurt(P, (src === 'bloater' || src === 'enemy' ? dmg : dmg * 0.4) * (1 - d / r * 0.5), { pos });
+    }
+    if (this.coop && this.coop.active) this.coop.recordFx(pos);
     this.boom(pos, color);
     this.shake(G.clamp(1.2 - pd / 20, 0.1, 0.9));
     G.Audio.S.explosion(pos);
@@ -1102,6 +1152,15 @@ G.Game = class {
             }
           } else {
             const c = pl.pos.clone(); c.y += 0.9;
+            if (this.coop && this.coop.isHost) for (const o of this.coop.others.values()) {
+              const P = o.proxy; if (P.dead) continue;
+              if (Math.abs(p.pos.x - P.pos.x) < 0.55 && Math.abs(p.pos.z - P.pos.z) < 0.55 && Math.abs(p.pos.y - P.pos.y - 0.9) < 1.0) {
+                done = true;
+                if (p.type === 'boulder') this.explode(p.pos.clone(), 2.6, p.dmg, 'enemy', 0x9a8a7a); else this.hurt(P, p.dmg, p.owner);
+                break;
+              }
+            }
+            if (done) break;
             if (Math.abs(p.pos.x - c.x) < 0.55 && Math.abs(p.pos.z - c.z) < 0.55 && Math.abs(p.pos.y - c.y) < 1.0) {
               done = true;
               if (p.type === 'boulder') this.explode(p.pos.clone(), 2.6, p.dmg, 'enemy', 0x9a8a7a);
@@ -1145,9 +1204,18 @@ G.Game = class {
     this.fx.push({ mesh: m, t: 0, life, kind: 'acid', dmg: Math.max(4, dmg), tick: 0, fire: !!color });
   }
   // ---------- Soldats ----------
-  enemyShot(e, from, hits, dmg, sound) {
+  enemyShot(e, from, hits, dmg, sound, victim) {
     const pl = this.player;
     G.Audio.S.shotAt(sound, from);
+    if (victim && victim.isRemote) {
+      // tir sur un équipier : l'hôte décide, l'équipier encaisse chez lui
+      const ok = hits > 0 && this.world.lineOfSight(from, victim.eye);
+      this.tracer(from, ok ? victim.eye.clone() : victim.eye.clone().add(new THREE.Vector3(G.rand(-1, 1), G.rand(-0.5, 1), G.rand(-1, 1))), 0xffb060);
+      if (ok) this.hurt(victim, dmg, e);
+      if (this.coop) this.coop.recordShot(e, victim, ok);
+      return;
+    }
+    if (this.coop) this.coop.recordShot(e, null, hits > 0);
     this.flashLight.position.copy(from); this.flashLight.intensity = Math.max(this.flashLight.intensity, 1.5);
     if (!this._mflash) this._mflash = new THREE.MeshBasicMaterial({ color: 0xffd070, transparent: true, opacity: 0.9, depthWrite: false });
     const fl = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), this._mflash.clone()); fl.position.copy(from); this.scene.add(fl);
@@ -1220,7 +1288,7 @@ G.Game = class {
   }
 
   // ---------- Bonus ----------
-  spawnPowerup(type, pos) {
+  spawnPowerup(type, pos, id) {
     if (!type) {
       const ent = Object.entries(G.POWERUPS); let tot = 0; for (const [, v] of ent) tot += v.w;
       let r = Math.random() * tot; type = 'ammo';
@@ -1235,7 +1303,9 @@ G.Game = class {
     const y = this.world.standBelow(Math.floor(pos.x), pos.y + 0.5, Math.floor(pos.z));
     g.position.set(pos.x, (y < 999 ? y : pos.y) + 0.8, pos.z);
     this.scene.add(g);
-    this.powerups.push({ type, g, t: 0, life: 25 });
+    const pu = { type, g, t: 0, life: id ? Infinity : 25, id: id || (this.puId = (this.puId || 0) + 1), base: pos.clone() };
+    this.powerups.push(pu);
+    return pu;
   }
   updatePowerups(dt) {
     const pl = this.player;
@@ -1246,8 +1316,11 @@ G.Game = class {
       p.g.visible = p.life - p.t > 5 || Math.floor(p.t * 6) % 2 === 0;
       const d = Math.hypot(pl.pos.x - p.g.position.x, pl.pos.z - p.g.position.z);
       const gone = p.t > p.life;
-      if (d < 1.3 && Math.abs(pl.pos.y + 0.8 - p.g.position.y) < 1.8) { this.applyPowerup(p.type); }
-      else if (!gone) continue;
+      const near = !pl.dead && !pl.spectator && d < 1.3 && Math.abs(pl.pos.y + 0.8 - p.g.position.y) < 1.8;
+      const coop = this.coop && this.coop.active ? this.coop : null;
+      if (near && coop && coop.isClient) { coop.claimPowerup(p.id); }
+      else if (near) { this.applyPowerup(p.type); if (coop) coop.powerEvent(p.type); }
+      else if (!gone && !p.drop) continue;
       this.scene.remove(p.g);
       p.g.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
       this.powerups.splice(i, 1);
@@ -1259,7 +1332,7 @@ G.Game = class {
     if (type === 'ammo') { pl.refillAmmo(); pl.grenades = 4; }
     else if (type === 'plate') { pl.armor = Math.min(pl.maxArmor, pl.armor + 50); pl.plates = Math.min(5, pl.plates + 1); }
     else if (type === 'nuke') {
-      for (const e of this.enemies) if (!e.dead && !e.isBoss) { this.particles(e.pos.clone().add(new THREE.Vector3(0, 1, 0)), 0xff8020, 6, 4); e.hp = 0; e.die('nuke', 'body'); }
+      if (!(this.coop && this.coop.isClient)) for (const e of this.enemies) if (!e.dead && !e.isBoss) { this.particles(e.pos.clone().add(new THREE.Vector3(0, 1, 0)), 0xff8020, 6, 4); e.hp = 0; e.die('nuke', 'body'); }
       this.addPoints(400);
       this.boomLight.position.copy(pl.pos); this.boomLight.intensity = 6; this.shake(0.6);
       G.UI.flash('#ffb060');
@@ -1526,6 +1599,7 @@ G.Game = class {
   }
   enterVehicle(v) {
     const pl = this.player;
+    if (v.remote) { G.UI.message('', 'Un équipier conduit déjà ce véhicule', 1.5, '#e0e0e0'); return; }
     pl.vehicle = v; pl._camPos = null; pl.camOrbit = 0; pl.crouch = false; pl.h = 1.8; pl.slideT = 0; pl.mouse.left = false; pl.mouse.right = false;
     this.buildItem = null; this.removeGhost();
     G.Audio.S.click();
@@ -1572,10 +1646,11 @@ G.Game = class {
       points: this.points, wave: this.campaign ? '' : this.wave, hp: pl.hp, maxHp: pl.maxHp,
       weapon: st.name, mag: this.power.fury > 0 ? '∞' : s.mag, reserve: s.reserve, reloading: pl.reloadT > 0,
       grenades: pl.grenades, armor: pl.armor, maxArmor: pl.maxArmor, plates: pl.plates, plateT: pl.plateT, builds: pl.builds, buildItem: this.buildItem, crouch: pl.crouch, cheats: !!this.cheats, perks: [...pl.perks], power: this.power,
-      prompt: mi && mi.prompt ? mi.prompt : pl.vehicle ? 'Véhicule ' + Math.max(0, Math.round(pl.vehicle.hp / pl.vehicle.maxHp * 100)) + ' % — [ZQSD] conduire · [Espace] frein · [E] sortir' : pl.spectator ? 'SPECTATEUR — [T] quitter' : near ? this.stationPrompt(near) : this.nearestVehicle() ? '[E] Conduire le véhicule' : (this.phase === 'intermission' && this.wave > 0 ? 'Vague suivante dans ' + Math.ceil(this.phaseT) + ' s — [N] pour lancer' : ''),
+      prompt: mi && mi.prompt ? mi.prompt : pl.vehicle ? 'Véhicule ' + Math.max(0, Math.round(pl.vehicle.hp / pl.vehicle.maxHp * 100)) + ' % — [ZQSD] conduire · [Espace] frein · [E] sortir' : pl.spectator ? 'SPECTATEUR — [T] quitter' : near ? this.stationPrompt(near) : this.nearestVehicle() ? '[E] Conduire le véhicule' : (this.phase === 'intermission' && this.wave > 0 ? 'Vague suivante dans ' + Math.ceil(this.phaseT) + ' s' + (this.coop && this.coop.isClient ? '' : ' — [N] pour lancer') : ''),
       boss: this.boss && !this.boss.dead ? { name: this.boss.T.name, hp: this.boss.hp / this.boss.maxHp, stunned: this.boss.state === 'stunned' } : null,
       left: this.campaign ? 0 : this.phase === 'active' ? this.toSpawn + this.aliveCount() : 0,
       ads: pl.ads, sprint: pl.sprinting, stamina: pl.stamina, slots: pl.slots.map((x, i) => ({ name: G.weaponStats(x).name, cur: i === pl.cur })),
+      team: this.coop && this.coop.active ? this.coop.team() : null,
     });
     this.drawMinimap();
   }
@@ -1602,6 +1677,11 @@ G.Game = class {
       ctx.fillStyle = e.isBoss ? '#ff40ff' : e.elite ? '#ffffff' : '#ff3030';
       const r = e.isBoss ? 5 : 2.5;
       ctx.beginPath(); ctx.arc(tx(e.pos.x), tz(e.pos.z), r, 0, Math.PI * 2); ctx.fill();
+    }
+    if (this.coop && this.coop.active) for (const o of this.coop.others.values()) {
+      ctx.fillStyle = o.proxy.dead ? '#777' : '#' + o.color.toString(16).padStart(6, '0');
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(tx(o.proxy.pos.x), tz(o.proxy.pos.z), 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
     ctx.translate(S / 2, S / 2); ctx.rotate(-pl.yaw + Math.PI);
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(0, 7); ctx.lineTo(-5, -5); ctx.lineTo(5, -5); ctx.closePath(); ctx.fill();

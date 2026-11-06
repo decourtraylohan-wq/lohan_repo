@@ -121,6 +121,7 @@ G.Vehicle = class {
     // fumée / feu quand le véhicule est abîmé
     const k = this.hp / this.maxHp;
     if (k < 0.4 && Math.random() < dt * (k < 0.2 ? 18 : 6)) game.particles(this.pos.clone().add(this.forward.multiplyScalar(this.L * 0.35)).add(new THREE.Vector3(0, 1.2, 0)), k < 0.2 ? 0xff6a20 : 0x444444, 1, 1.5, 0.22);
+    if (this.remote) { this.remoteUpdate(dt); return; }
     if (k < 0.2) { this.burnHurt = (this.burnHurt || 0) + dt; if (this.burnHurt > 0.5) { this.burnHurt = 0; this.damage(25); } }
     if (input) {
       const thr = (input.fwd ? 1 : 0) - (input.back ? 1 : 0);
@@ -141,6 +142,24 @@ G.Vehicle = class {
     this.updateSolid();
     if (this.pos.distanceTo(this.blockPos) > 0.8 || (this.speed === 0 && this.pos.distanceTo(this.blockPos) > 0.05)) this.reblock();
   }
+  // voiture conduite par un équipier : on suit la position reçue (lissée)
+  remoteUpdate(dt) {
+    const n = this.net; if (!n) return;
+    const before = this.pos.clone(), k = Math.min(1, dt * 12);
+    this.pos.lerp(n.pos, k);
+    let dy = n.yaw - this.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); this.yaw += dy * k;
+    if (this.pos.distanceTo(n.pos) > 8) { this.pos.copy(n.pos); this.yaw = n.yaw; }
+    const mv = this.pos.clone().sub(before), sp = mv.length() / Math.max(dt, 0.008) * (mv.dot(this.forward) >= 0 ? 1 : -1);
+    this.speed = G.lerp(this.speed, sp, Math.min(1, dt * 8));
+    this.steer = G.lerp(this.steer, G.clamp(dy * 3, -1, 1), Math.min(1, dt * 6));
+    this.wheelRot += this.speed * dt / 0.36;
+    if (this.driver) { this.driver.visible = true; this.steeringWheel.rotation.z = this.steer * 1.4; }
+    for (const wh of this.wheels) { wh.t.rotation.x = this.wheelRot; wh.r.rotation.x = this.wheelRot; wh.piv.rotation.y = wh.front ? this.steer * 0.45 : 0; }
+    this.syncMesh(); this.updateSolid();
+    if (this.pos.distanceTo(this.blockPos) > 0.8) this.reblock();
+    // l'hôte applique les ennemis renversés par l'équipier (les points lui reviennent)
+    if (this.game.coop && this.game.coop.isHost && Math.abs(this.speed) > 3) this.runOver(this.remote);
+  }
   step(dt) {
     const game = this.game;
     {
@@ -156,28 +175,33 @@ G.Vehicle = class {
         this.speed = -this.speed * 0.25;
       } else { this.pos.copy(np); this.yaw = nyaw; }
       // renverse les ennemis
-      if (Math.abs(this.speed) > 3) {
-        const f = this.forward, r = this.right;
-        for (const e of game.enemies) {
-          if (e.dead || e.carHitCD > game.time) continue;
-          const d = e.pos.clone().sub(this.pos);
-          if (Math.abs(d.y) > 2) continue;
-          if (Math.abs(d.dot(f)) < this.L / 2 + 0.4 && Math.abs(d.dot(r)) < this.W / 2 + 0.4) {
-            e.carHitCD = game.time + 0.6;
-            const dmg = Math.abs(this.speed) * (e.isBoss ? 25 : 60);
-            game.damageEnemy(e, dmg, 'body', 'car');
-            e.vel.addScaledVector(f, this.speed * 0.8); e.vel.y = 6;
-            const side = Math.sign(d.dot(r)) || 1; e.pos.addScaledVector(r, side * (this.W / 2 + 0.6 - Math.abs(d.dot(r))));
-            this.damage(e.isBoss ? 120 : 15);
-            game.particles(e.pos.clone().add(new THREE.Vector3(0, 1, 0)), 0x7a1010, 8, 4);
-            if (e.isBoss) this.speed *= 0.2;
-          }
+      if (Math.abs(this.speed) > 3) this.runOver(null);
+    }
+  }
+  runOver(peer) {
+    const game = this.game, f = this.forward, r = this.right;
+    for (const e of game.enemies) {
+      if (e.dead || e.carHitCD > game.time) continue;
+      const d = e.pos.clone().sub(this.pos);
+      if (Math.abs(d.y) > 2) continue;
+      if (Math.abs(d.dot(f)) < this.L / 2 + 0.4 && Math.abs(d.dot(r)) < this.W / 2 + 0.4) {
+        e.carHitCD = game.time + 0.6;
+        const dmg = Math.abs(this.speed) * (e.isBoss ? 25 : 60);
+        if (peer) { e.lastBy = peer; game.damageEnemyNet(e, dmg, 'body', 'car'); } else game.damageEnemy(e, dmg, 'body', 'car');
+        if (!e.puppet) {
+          e.vel.addScaledVector(f, this.speed * 0.8); e.vel.y = 6;
+          const side = Math.sign(d.dot(r)) || 1; e.pos.addScaledVector(r, side * (this.W / 2 + 0.6 - Math.abs(d.dot(r))));
         }
+        if (!peer) this.damage(e.isBoss ? 120 : 15);
+        game.particles(e.pos.clone().add(new THREE.Vector3(0, 1, 0)), 0x7a1010, 8, 4);
+        if (e.isBoss && !peer) this.speed *= 0.2;
       }
     }
   }
   damage(n) {
     if (this.dead) return;
+    // voiture d'un équipier : l'hôte lui transmet les dégâts (c'est son jeu qui fait foi)
+    if (this.remote) { const c = this.game.coop; if (c && c.isHost) c.queueDamage(this.remote, n / 1.2, null); return; }
     this.hp -= n;
     if (this.hp <= 0) this.explode();
   }
@@ -192,7 +216,9 @@ G.Vehicle = class {
     for (const wh of this.wheels) wh.piv.visible = false;
     this.mesh.position.y -= 0.25;
     this.solid.wreck = true; this.solid.max.y -= 0.25;
-    game.explode(this.pos.clone().add(new THREE.Vector3(0, 1, 0)), 6, 450, 'car', 0xff8030);
+    const at = this.pos.clone().add(new THREE.Vector3(0, 1, 0));
+    if (this.remote) { game.boom(at, 0xff8030); G.Audio.S.explosion(at); } // copie d'une voiture d'équipier : effet seulement
+    else game.explode(at, 6, 450, 'car', 0xff8030);
     game.shake(1);
   }
   remove() {

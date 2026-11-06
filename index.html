@@ -27,6 +27,7 @@
   <div id="msg"><div id="msgTitle"></div><div id="msgSub"></div></div>
   <div id="prompt"></div>
   <div id="powers"></div>
+  <div id="team" class="hidden"></div>
   <div id="bottomleft">
     <div id="pops"></div>
     <div id="points">500</div>
@@ -62,6 +63,7 @@
         <button data-go="story" class="big">Histoire</button>
         <button data-go="missions" class="big">Missions</button>
         <button data-go="play" class="big">Infini</button>
+        <button data-go="coop" class="big">Coop en ligne</button>
         <button data-go="stats">Classement &amp; stats</button>
         <button data-go="arsenal">Arsenal &amp; bestiaire</button>
         <button data-go="options">Options</button>
@@ -109,6 +111,11 @@
   <section id="scr-missions" class="screen hidden">
     <header><button class="back" data-go="main">← Retour</button><h2>Missions</h2></header>
     <div id="missionsBody"></div>
+  </section>
+
+  <section id="scr-coop" class="screen hidden">
+    <header><button class="back" data-go="main">← Retour</button><h2>Coop en ligne — jusqu'à 4 joueurs</h2></header>
+    <div id="coopBody"></div>
   </section>
 
   <section id="scr-stats" class="screen hidden">
@@ -186,6 +193,7 @@
 <script src="js/player.js"></script>
 <script src="js/vehicles.js"></script>
 <script src="js/story.js"></script>
+<script src="js/coop.js"></script>
 <script src="js/game.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>

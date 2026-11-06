@@ -161,6 +161,7 @@ G.Player = class {
     this.pitch = G.clamp(this.pitch, -1.55, 1.55);
     if (this.vehicle) { this.updateVehicleInput(); this.vmRoot.visible = false; this.knife.visible = false; return; }
     if (this.spectator) { this.updateSpectator(dt, cam); return; }
+    if (this.dead) { this.vmRoot.visible = false; this.knife.visible = false; this.mouse.left = false; if (game.coop && game.coop.active) game.coop.spectate(cam, dt); return; }
 
     // déplacement
     const k = this.keys;
