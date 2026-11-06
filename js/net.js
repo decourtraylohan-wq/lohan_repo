@@ -2,6 +2,7 @@
 // Même interface que le salon temps réel de claude.ai (presence / peers / onPeers / onConnection),
 // avec l'hôte comme relais : chaque invité lui envoie sa présence, il la renvoie à tous.
 // Mise en relation : par le code de partie (serveur public PeerJS), ou par invitation à copier-coller.
+G.PLAY_URL = 'https://decourtraylohan-wq.github.io/lohan_repo/';
 G.NET_ICE = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }];
 G.NetRoom = class {
   constructor() {

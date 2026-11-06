@@ -56,6 +56,7 @@ G.UI = (function () {
         '<div class="joinrow"><input id="coopCode" maxlength="12" placeholder="CODE" autocomplete="off" spellcheck="false"><button class="act" id="btnCoopJoin">Rejoindre</button></div><div class="cwarn hidden" id="coopJoinErr"></div>' +
         '<details class="cdiag"><summary>Le code ne marche pas ? Invitation manuelle</summary><p>Demandez à l\'hôte une <b>invitation</b> (bouton dans son salon), collez-la ici, puis renvoyez-lui la <b>réponse</b> qui s\'affiche.</p>' +
         '<textarea id="manIn" rows="3" placeholder="Collez l\'invitation ici"></textarea><button class="act" id="btnManJoin">Lire l\'invitation</button><div class="cwarn hidden" id="manErr"></div></details>' +
+        '<p class="hint">Sur claude.ai, le jeu en ligne est bloqué : jouez avec vos amis sur <a href="' + G.PLAY_URL + '" target="_blank" rel="noopener">' + G.PLAY_URL.replace('https://', '') + '</a>.</p>' +
         '<p class="hint">Pseudo : <b>' + G.esc(R.profile.name) + '</b> (modifiable dans Options). La connexion se fait directement entre vos navigateurs : aucun compte ni invitation claude.ai n\'est nécessaire, il suffit d\'ouvrir le jeu.</p></div></div>';
       body.innerHTML = h;
       body.querySelectorAll('.ctype').forEach((b) => b.addEventListener('click', () => { coopType = b.dataset.t; G.Audio.S.click(); coopView = ''; renderCoop(); }));
@@ -93,7 +94,7 @@ G.UI = (function () {
     if (manualAnswer && C.role === 'client') $('manOut').value = manualAnswer;
     const copy = () => { const t = $('manOut'); t.select(); try { navigator.clipboard.writeText(t.value).catch(() => document.execCommand('copy')); } catch (e) { document.execCommand('copy'); } G.Audio.S.click(); };
     if ($('btnManCopy')) $('btnManCopy').addEventListener('click', copy);
-    if ($('btnManOffer')) $('btnManOffer').addEventListener('click', async () => { $('btnManOffer').disabled = true; $('manOut').value = 'Préparation…'; try { $('manOut').value = await C.manualInvite(); } catch (e) { $('manOut').value = 'Impossible de créer l\'invitation sur ce navigateur.'; } $('btnManOffer').disabled = false; });
+    if ($('btnManOffer')) $('btnManOffer').addEventListener('click', async () => { $('btnManOffer').disabled = true; $('manOut').value = 'Préparation…'; try { $('manOut').value = await C.manualInvite(); } catch (e) { $('manOut').value = 'Impossible de créer l\'invitation ici (' + ((e && e.message) || e) + '). La page claude.ai bloque sans doute la connexion directe : jouez en ligne depuis ' + G.PLAY_URL; } $('btnManOffer').disabled = false; });
     if ($('btnManAccept')) $('btnManAccept').addEventListener('click', async () => {
       const er = $('manErr'); er.classList.add('hidden');
       try { await C.manualAccept($('manAns').value); $('manAns').value = ''; $('manOut').value = ''; er.textContent = 'Réponse acceptée : connexion en cours…'; er.classList.remove('hidden'); }
@@ -105,13 +106,14 @@ G.UI = (function () {
     const cs = $('coopStatus');
     if (cs) {
       const n = C.peers.length, ns = C.netStatus(), host = C.role === 'host';
+      const inClaude = !/github\.io$|^localhost$|^127\./.test(location.hostname) && location.protocol !== 'file:';
       const T = {
         starting: '○ Ouverture du salon…',
         ready: '● Salon ouvert' + (n > 1 ? ' — ' + (n - 1) + ' ami' + (n > 2 ? 's' : '') + ' connecté' + (n > 2 ? 's' : '') : ' — en attente de vos amis'),
         connecting: '○ Connexion à la partie…',
         connected: '● Connecté à la partie',
         nogame: '✕ Aucune partie avec ce code : vérifiez-le, et que l\'hôte a bien son salon ouvert.',
-        noserver: '✕ Le serveur de mise en relation ne répond pas' + (host ? ' : utilisez l\'invitation manuelle ci-dessous.' : ' : demandez une invitation manuelle à l\'hôte (Quitter le salon, puis « Invitation manuelle »).'),
+        noserver: '✕ Le serveur de mise en relation ne répond pas' + (inClaude ? ' : la page claude.ai bloque le jeu en ligne. Ouvrez le jeu sur ' + G.PLAY_URL + ' (vous et vos amis).' : host ? ' : utilisez l\'invitation manuelle ci-dessous.' : ' : demandez une invitation manuelle à l\'hôte (Quitter le salon, puis « Invitation manuelle »).'),
         lost: '✕ Connexion perdue avec l\'hôte.',
         idle: '',
       };

@@ -293,3 +293,4 @@ h3.sec { font-family: 'Bungee', sans-serif; font-weight: 400; letter-spacing: 1p
 .cdiag ul { margin: 6px 0 0; padding-left: 18px; }
 .cdiag textarea { width: 100%; box-sizing: border-box; margin: 6px 0; background: #1b2027; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 8px; font: 12px monospace; resize: vertical; }
 .cdiag button.act { margin: 2px 0 6px; }
+.hint a { color: var(--accent2); }
